@@ -70,7 +70,7 @@ def build_agent(api_key: str):
     )
 
 
-if prompt := st.chat_input("예: 나이트로드 캐릭터 정보 알려줘"):
+if prompt := st.chat_input("예: 행운s 캐릭터 정보 알려줘"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
