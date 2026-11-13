@@ -1,91 +1,32 @@
-import json
-import os
-
 import streamlit as st
 from dotenv import load_dotenv
-from langchain.agents import create_agent
-from langchain.tools import tool
-from langchain_openai import ChatOpenAI
-
-from maple_api import NexonAPIError, lookup_character as fetch_character
+from ui_theme import apply_maple_theme
 
 load_dotenv()
 
-st.set_page_config(page_title="메이플스토리 AI 도우미", page_icon="🍁")
+st.set_page_config(page_title="메이플스토리 AI 도우미", page_icon="🍁", layout="wide")
+apply_maple_theme()
 st.title("🍁 메이플스토리 AI 도우미")
-st.caption("캐릭터 이름을 물어보면 넥슨 Open API로 기본 정보를 조회합니다.")
+st.image("assets/maple_home_hero.png", use_container_width=True)
+st.subheader("캐릭터 데이터와 게임 정보를 한곳에서")
+st.write(
+    "캐릭터 조회, 스펙 분석, 장비 점검, 경매장 이미지 분석과 공략 검색을 제공하는 "
+    "메이플스토리 AI Agent입니다. 왼쪽 메뉴에서 **도구 챗봇** 페이지로 이동해 기능을 선택하세요."
+)
+
+st.info("대화 처리: GPT-5.4-nano 1차 분석 → GPT-5.5 최종 답변")
+
+st.markdown("### 제공 기능")
+features = [
+    ("캐릭터 조회", "닉네임으로 OCID, 레벨·직업·월드, 능력치, 장비 및 HEXA 정보를 조회합니다."),
+    ("캐릭터 분석", "조회된 캐릭터 데이터를 모아 강점과 추가 확인이 필요한 부분을 정리합니다."),
+    ("스펙업·보스", "예산과 장비 상태를 바탕으로 점검할 항목을 추천하고, 보스 도전 가능성을 참고용으로 분석합니다."),
+    ("경매장 이미지", "스크린샷에서 읽을 수 있는 옵션과 표시 가격을 정리합니다. 시세 판단은 근거가 있을 때만 제공합니다."),
+    ("공략 검색", "프로젝트의 `knowledge_base/` 폴더에 넣은 Markdown 공략 문서를 검색하고 출처를 표시합니다."),
+]
+for title, description in features:
+    with st.container(border=True):
+        st.markdown(f"**{title}** — {description}")
+
+st.caption("스펙업·보스 결과는 공식 계산 결과가 아니며, 파티 구성·숙련도·실시간 시세에 따라 달라질 수 있습니다.")
 st.caption("Data based on NEXON Open API")
-
-
-def get_secret(name: str) -> str:
-    value = os.getenv(name, "")
-    if value:
-        return value
-    try:
-        return str(st.secrets.get(name, ""))
-    except Exception:
-        return ""
-
-
-nexon_api_key = get_secret("NEXON_API_KEY")
-openai_api_key = get_secret("OPENAI_API_KEY")
-
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-
-def build_agent(api_key: str):
-    @tool
-    def character_lookup(character_name: str) -> str:
-        """메이플스토리 캐릭터 이름으로 월드, 직업, 레벨 등 기본 정보를 조회합니다."""
-        try:
-            character = fetch_character(character_name, api_key)
-            return json.dumps(character, ensure_ascii=False)
-        except (NexonAPIError, ValueError) as exc:
-            return f"조회 실패: {exc}"
-
-    return create_agent(
-        model=ChatOpenAI(model="gpt-4o-mini", api_key=openai_api_key, temperature=0),
-        tools=[character_lookup],
-        system_prompt=(
-            "너는 메이플스토리 정보를 안내하는 한국어 챗봇이다. "
-            "사용자가 특정 캐릭터의 정보를 물으면 반드시 character_lookup 도구를 사용한다. "
-            "도구가 반환한 정보만 사실로 안내하고, 모르는 정보는 추측하지 않는다. "
-            "레벨, 월드, 직업, 길드와 조회 기준일을 읽기 쉽게 정리한다."
-        ),
-    )
-
-
-if prompt := st.chat_input("예: 행운s 캐릭터 정보 알려줘"):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    if not nexon_api_key or not openai_api_key:
-        missing_keys = []
-        if not nexon_api_key:
-            missing_keys.append("NEXON_API_KEY")
-        if not openai_api_key:
-            missing_keys.append("OPENAI_API_KEY")
-        answer = "서버 환경 설정에 다음 키를 추가해 주세요: " + ", ".join(missing_keys)
-    else:
-        with st.chat_message("assistant"):
-            with st.spinner("캐릭터 정보를 확인하고 있어요..."):
-                try:
-                    agent = build_agent(nexon_api_key)
-                    result = agent.invoke({"messages": st.session_state.messages})
-                    answer = result["messages"][-1].content
-                except Exception as exc:
-                    # Keep credentials and low-level request details out of the chat UI.
-                    answer = f"요청을 처리하지 못했습니다. API 키와 설정을 확인해 주세요. ({type(exc).__name__})"
-            st.markdown(answer)
-
-    if not nexon_api_key or not openai_api_key:
-        with st.chat_message("assistant"):
-            st.info(answer)
-    st.session_state.messages.append({"role": "assistant", "content": answer})

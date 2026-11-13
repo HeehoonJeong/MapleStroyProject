@@ -1,4 +1,4 @@
-streamlit>=1.40,<2
+streamlit>=1.49,<2
 langchain>=1.0,<2
 langchain-openai>=1.0,<2
 requests>=2.32,<3
