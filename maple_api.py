@@ -145,6 +145,7 @@ def estimate_boss_clear(character_name: str, boss_name: str, party_size: int, ap
             "level": basic.get("character_level"),
             "class": basic.get("character_class"),
             "world": basic.get("world_name"),
+            "character_image": basic.get("character_image"),
         },
         "stats": _select_stats(stats),
         "limitations": [

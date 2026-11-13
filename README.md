@@ -15,8 +15,7 @@ LangChain 에이전트와 Streamlit 기반의 메이플스토리 AI Agent입니�
 9. 경매장 스크린샷에서 읽을 수 있는 아이템 옵션과 표시 가격 분석
 10. 로컬 Markdown 공략 문서 검색(RAG)
 
-대화는 **GPT-5.4-nano 1차 처리 → GPT-5.5 최종 답변** 순서입니다. 두 모델에 대한 OpenAI API 접근 권한이 필요합니다. 환경 변수 `FAST_MODEL`, `FINAL_MODEL`로 모델 ID를 바꿀 수 있습니다.
-최종 답변은 GPT-5.5의 토큰 스트림으로 화면에 표시됩니다.
+대화의 도구 호출과 최종 답변 모두 **GPT-5.4-nano 하나만** 사용합니다. 최종 답변은 해당 모델의 토큰 스트림으로 화면에 표시됩니다.
 
 ## 안전장치
 
@@ -29,9 +28,6 @@ LangChain 미들웨어는 모델 호출 전에 메이플스토리 범위 밖 질
 ```env
 NEXON_API_KEY=넥슨_Open_API_키
 OPENAI_API_KEY=OpenAI_API_키
-# 선택 설정
-FAST_MODEL=gpt-5.4-nano
-FINAL_MODEL=gpt-5.5
 ```
 
 넥슨 키는 [NEXON Open API](https://openapi.nexon.com/ko/)에서 애플리케이션을 등록해 발급받습니다. `.env`를 GitHub에 커밋하지 마세요. 배포 시에는 호스팅 서비스의 Secret 환경 변수 또는 Streamlit의 **Settings → Secrets**에 `NEXON_API_KEY`, `OPENAI_API_KEY`를 등록합니다.

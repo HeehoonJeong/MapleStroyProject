@@ -22,7 +22,13 @@ from maple_guide import search_maple_guide as retrieve_guide
 def build_tools(api_key: str, screenshot_attached: bool = False) -> dict:
     @tool("get_character_ocid", description="캐릭터 닉네임으로 고유 식별자 OCID를 조회합니다.")
     def get_character_ocid_tool(character_name: str) -> str:
-        return _safe(lambda: fetch_ocid(character_name, api_key))
+        def lookup():
+            identity = fetch_ocid(character_name, api_key)
+            return {
+                "ocid": identity["ocid"],
+                "character": _safe_character_profile(character_name, api_key),
+            }
+        return _safe(lookup)
 
     @tool("get_character_basic", description="캐릭터 레벨, 직업, 월드, 길드 등 기본 정보를 조회합니다.")
     def get_character_basic_tool(character_name: str) -> str:
@@ -30,15 +36,15 @@ def build_tools(api_key: str, screenshot_attached: bool = False) -> dict:
 
     @tool("get_character_stats", description="캐릭터 주스탯, 전투력, 보스 데미지, 방어율 무시 등 종합 능력치를 조회합니다.")
     def get_character_stats_tool(character_name: str) -> str:
-        return _safe(lambda: fetch_stats(character_name, api_key))
+        return _safe(lambda: _with_profile(character_name, "stats", fetch_stats(character_name, api_key), api_key))
 
     @tool("get_character_equipment", description="장착 장비와 스타포스, 잠재능력 정보를 조회합니다.")
     def get_character_equipment_tool(character_name: str) -> str:
-        return _safe(lambda: fetch_equipment(character_name, api_key))
+        return _safe(lambda: _with_profile(character_name, "equipment", fetch_equipment(character_name, api_key), api_key))
 
     @tool("get_character_hexa", description="HEXA 코어와 HEXA 스탯 및 강화 정보를 조회합니다.")
     def get_character_hexa_tool(character_name: str) -> str:
-        return _safe(lambda: fetch_hexa(character_name, api_key))
+        return _safe(lambda: _with_profile(character_name, "hexa", fetch_hexa(character_name, api_key), api_key))
 
     @tool("analyze_character_spec", description="캐릭터 기본 정보, 능력치, 장비, HEXA 데이터를 함께 조회해 종합 분석합니다.")
     def analyze_character_spec_tool(character_name: str) -> str:
@@ -46,7 +52,11 @@ def build_tools(api_key: str, screenshot_attached: bool = False) -> dict:
 
     @tool("recommend_spec_upgrade", description="현재 장비와 예산을 바탕으로 점검할 스펙업 후보를 제시합니다. 경매장 시세를 확인하지 않는 참고용 분석입니다.")
     def recommend_spec_upgrade_tool(character_name: str, budget_meso: int) -> str:
-        return _safe(lambda: fetch_upgrade_recommendation(character_name, budget_meso, api_key))
+        def recommend():
+            result = fetch_upgrade_recommendation(character_name, budget_meso, api_key)
+            result["character"] = _safe_character_profile(character_name, api_key)
+            return result
+        return _safe(recommend)
 
     @tool("estimate_boss_clear", description="캐릭터 능력치와 보스 이름, 파티 인원을 바탕으로 참고용 클리어 가능성을 분석합니다. 공식 보장 계산기가 아닙니다.")
     def estimate_boss_clear_tool(character_name: str, boss_name: str, party_size: int = 1) -> str:
@@ -92,3 +102,28 @@ def _safe(fn) -> str:
         return to_json(value) if isinstance(value, dict) else str(value)
     except (NexonAPIError, ValueError) as exc:
         return f"조회 실패: {exc}"
+
+
+def _character_profile(character_name: str, api_key: str) -> dict:
+    basic = fetch_basic(character_name, api_key)
+    return {
+        key: basic.get(key)
+        for key in (
+            "character_name", "character_level", "character_class", "world_name",
+            "character_guild_name", "character_image", "date",
+        )
+    }
+
+
+def _safe_character_profile(character_name: str, api_key: str) -> dict:
+    try:
+        return _character_profile(character_name, api_key)
+    except (NexonAPIError, ValueError):
+        return {"character_name": character_name, "character_image": None}
+
+
+def _with_profile(character_name: str, data_key: str, data: dict, api_key: str) -> dict:
+    return {
+        "character": _safe_character_profile(character_name, api_key),
+        data_key: data,
+    }

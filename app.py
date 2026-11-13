@@ -13,7 +13,7 @@ st.write("관심 있는 기능을 눌러 상세 설명을 확인하고, 바로 �
 
 hero_left, hero_right = st.columns([1, 1])
 with hero_left:
-    st.info("**대화 흐름**  GPT-5.4-nano 빠른 1차 처리 → GPT-5.5 검토 및 스트리밍 답변")
+    st.info("**대화 흐름**  GPT-5.4-nano가 도구를 실행하고 최종 답변까지 스트리밍")
 with hero_right:
     if st.button("✨ 챗봇에서 기능 자동 선택", type="primary", use_container_width=True):
         st.session_state["pending_tool_feature_label"] = "자동 선택"
@@ -59,7 +59,7 @@ features = [
     {
         "label": "6. 캐릭터 종합 스펙 분석", "icon": "🧩", "title": "종합 스펙 분석",
         "short": "기본 정보, 능력치, 장비, HEXA를 함께 봅니다.",
-        "detail": "여러 캐릭터 API를 호출해 한 번에 모은 뒤, GPT-5.5가 조회된 데이터만 근거로 스펙의 특징과 추가로 점검할 부분을 정리합니다.",
+        "detail": "여러 캐릭터 API를 호출해 한 번에 모은 뒤, GPT-5.4-nano가 조회된 데이터만 근거로 스펙의 특징과 추가로 점검할 부분을 정리합니다.",
         "example": "행운s의 전체 스펙을 종합 분석해줘",
         "note": "여러 API 호출이 필요해 단일 조회 기능보다 응답이 오래 걸릴 수 있습니다.",
     },
