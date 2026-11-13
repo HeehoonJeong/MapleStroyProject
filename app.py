@@ -27,16 +27,7 @@ def get_secret(name: str) -> str:
         return ""
 
 
-with st.sidebar:
-    st.header("API 설정")
-    nexon_api_key = st.text_input(
-        "NEXON API 키",
-        value=get_secret("NEXON_API_KEY"),
-        type="password",
-        help="넥슨 Open API에서 애플리케이션을 등록한 뒤 발급받은 키입니다.",
-    )
-    st.caption("OpenAI API 키는 프로젝트의 .env 파일에서 불러옵니다.")
-
+nexon_api_key = get_secret("NEXON_API_KEY")
 openai_api_key = get_secret("OPENAI_API_KEY")
 
 
@@ -76,10 +67,12 @@ if prompt := st.chat_input("예: 행운s 캐릭터 정보 알려줘"):
         st.markdown(prompt)
 
     if not nexon_api_key or not openai_api_key:
+        missing_keys = []
         if not nexon_api_key:
-            answer = "사이드바에서 NEXON API 키를 입력해 주세요."
-        else:
-            answer = "서버의 .env 파일에 OPENAI_API_KEY를 설정해 주세요."
+            missing_keys.append("NEXON_API_KEY")
+        if not openai_api_key:
+            missing_keys.append("OPENAI_API_KEY")
+        answer = "서버 환경 설정에 다음 키를 추가해 주세요: " + ", ".join(missing_keys)
     else:
         with st.chat_message("assistant"):
             with st.spinner("캐릭터 정보를 확인하고 있어요..."):
