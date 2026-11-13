@@ -68,6 +68,20 @@ DESCRIPTIONS = {
     "search_maple_guide": "knowledge_base/의 Markdown 공략 문서 검색 및 출처 제공",
 }
 
+EXAMPLES = {
+    None: ["행운s 캐릭터 기본 정보를 알려줘", "행운s의 전체 스펙과 HEXA 정보를 분석해줘"],
+    "get_character_ocid": ["행운s의 OCID를 조회해줘"],
+    "get_character_basic": ["행운s의 레벨, 직업, 월드를 알려줘"],
+    "get_character_stats": ["행운s의 주스탯, 보스 데미지, 방무를 정리해줘"],
+    "get_character_equipment": ["행운s 장착 장비의 스타포스와 잠재를 보여줘"],
+    "get_character_hexa": ["행운s의 HEXA 코어와 HEXA 스탯을 요약해줘"],
+    "analyze_character_spec": ["행운s의 전체 스펙을 종합 분석해줘"],
+    "recommend_spec_upgrade": ["행운s 장비를 보고 예산 10억 메소 기준 스펙업 후보를 추천해줘"],
+    "estimate_boss_clear": ["행운s로 하드 세렌 6인 파티를 도전할 때 참고할 점을 알려줘"],
+    "analyze_auction_screenshot": ["첨부한 아이템의 옵션과 표시 가격을 정리해줘"],
+    "search_maple_guide": ["knowledge_base 문서에서 아케인 심볼 강화 정보를 찾아줘"],
+}
+
 
 def content_as_text(content) -> str:
     if isinstance(content, str):
@@ -79,18 +93,24 @@ def content_as_text(content) -> str:
     return str(content)
 
 
-selected_label = st.selectbox("기능 선택", list(FEATURES.keys()))
+pending_feature = st.session_state.pop("pending_tool_feature_label", None)
+if pending_feature in FEATURES:
+    st.session_state["tool_feature_select"] = pending_feature
+selected_label = st.selectbox("기능 선택", list(FEATURES.keys()), key="tool_feature_select")
 selected_tool_name = FEATURES[selected_label]
 if selected_tool_name:
-    st.caption(DESCRIPTIONS[selected_tool_name])
+    st.info(f"**{selected_label}**\n\n{DESCRIPTIONS[selected_tool_name]}")
 else:
-    st.caption("에이전트가 질문에 맞는 기능을 자동으로 선택합니다.")
+    st.info("**자동 선택**\n\n에이전트가 질문에 맞는 도구를 선택합니다. 보다 정확한 결과를 원하면 기능을 직접 골라주세요.")
 
-uploaded_image = st.file_uploader(
-    "경매장 스크린샷 첨부 (선택)",
-    type=["png", "jpg", "jpeg", "webp"],
-    help="스크린샷 분석 기능을 선택하고 이미지에 대해 질문하세요. 최대 8MB.",
-)
+uploaded_image = None
+if selected_tool_name in {None, "analyze_auction_screenshot"}:
+    uploaded_image = st.file_uploader(
+        "경매장 스크린샷 첨부 (선택)",
+        type=["png", "jpg", "jpeg", "webp"],
+        help="스크린샷 분석 기능을 선택하고 이미지에 대해 질문하세요. 최대 8MB.",
+        max_upload_size=8,
+    )
 image_bytes = uploaded_image.getvalue() if uploaded_image else None
 image_mime = uploaded_image.type if uploaded_image else None
 if image_bytes and len(image_bytes) > 8 * 1024 * 1024:
@@ -119,11 +139,29 @@ if history_key not in st.session_state:
     st.session_state[history_key] = []
 history = st.session_state[history_key]
 
+with st.sidebar:
+    st.markdown("### 대화 설정")
+    st.caption("API 키는 화면에 표시되지 않고 서버 환경에서만 사용됩니다.")
+    if st.button("현재 대화 지우기", use_container_width=True):
+        st.session_state[history_key] = []
+        st.rerun()
+
+st.markdown("#### 바로 시작하기")
+quick_columns = st.columns(min(2, len(EXAMPLES[selected_tool_name])))
+for index, example in enumerate(EXAMPLES[selected_tool_name]):
+    with quick_columns[index % len(quick_columns)]:
+        if st.button(example, key=f"quick_prompt_{selected_tool_name}_{index}", use_container_width=True):
+            st.session_state["pending_chat_prompt"] = example
+            st.rerun()
+
 for message in history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("예: 루미너스 캐릭터의 스펙을 분석해줘"):
+quick_prompt = st.session_state.pop("pending_chat_prompt", None)
+typed_prompt = st.chat_input("캐릭터명과 원하는 정보를 구체적으로 입력하세요")
+prompt = quick_prompt or typed_prompt
+if prompt:
     history.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)

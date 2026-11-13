@@ -99,7 +99,7 @@ def analyze_character_spec(character_name: str, api_key: str) -> dict:
     return result
 
 
-def recommend_spec_upgrade(character_name: str, budget_krw: int, api_key: str) -> dict:
+def recommend_spec_upgrade(character_name: str, budget_meso: int, api_key: str) -> dict:
     equipment = get_character_equipment(character_name, api_key)
     stats = get_character_stats(character_name, api_key)
     items = _equipment_items(equipment)
@@ -124,7 +124,7 @@ def recommend_spec_upgrade(character_name: str, budget_krw: int, api_key: str) -
             })
     return {
         "character_name": character_name,
-        "budget_krw": max(0, budget_krw),
+        "budget_meso": max(0, budget_meso),
         "stat_snapshot": _select_stats(stats),
         "upgrade_candidates": candidates[:12],
         "limitations": [

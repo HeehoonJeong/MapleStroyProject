@@ -45,8 +45,8 @@ def build_tools(api_key: str, screenshot_attached: bool = False) -> dict:
         return _safe(lambda: fetch_spec(character_name, api_key))
 
     @tool("recommend_spec_upgrade", description="현재 장비와 예산을 바탕으로 점검할 스펙업 후보를 제시합니다. 경매장 시세를 확인하지 않는 참고용 분석입니다.")
-    def recommend_spec_upgrade_tool(character_name: str, budget_krw: int) -> str:
-        return _safe(lambda: fetch_upgrade_recommendation(character_name, budget_krw, api_key))
+    def recommend_spec_upgrade_tool(character_name: str, budget_meso: int) -> str:
+        return _safe(lambda: fetch_upgrade_recommendation(character_name, budget_meso, api_key))
 
     @tool("estimate_boss_clear", description="캐릭터 능력치와 보스 이름, 파티 인원을 바탕으로 참고용 클리어 가능성을 분석합니다. 공식 보장 계산기가 아닙니다.")
     def estimate_boss_clear_tool(character_name: str, boss_name: str, party_size: int = 1) -> str:
