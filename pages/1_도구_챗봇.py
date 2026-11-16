@@ -20,9 +20,10 @@ from ui_theme import apply_maple_theme
 
 load_dotenv()
 
-st.set_page_config(page_title="도구 챗봇 | 메이플스토리 AI", page_icon="🧰", layout="wide")
+st.set_page_config(page_title="도구 챗봇 | 메이플스토리 AI", layout="wide")
 apply_maple_theme()
-st.title("🧰 메이플스토리 도구 챗봇")
+st.markdown('<div class="maple-wordmark">MAPLE / AI</div>', unsafe_allow_html=True)
+st.title("도구 챗봇")
 st.caption("GPT-5.4-nano 하나로 도구를 실행하고 최종 답변까지 스트리밍합니다.")
 intro, art = st.columns([1.3, 1])
 with intro:
@@ -133,9 +134,17 @@ if pending_feature in FEATURES:
 selected_label = st.selectbox("기능 선택", list(FEATURES.keys()), key="tool_feature_select")
 selected_tool_name = FEATURES[selected_label]
 if selected_tool_name:
-    st.info(f"**{selected_label}**\n\n{DESCRIPTIONS[selected_tool_name]}")
+    st.markdown(
+        f'<div class="maple-feature-summary"><div class="eyebrow">SELECTED TOOL · {selected_label}</div>'
+        f'<div class="description">{DESCRIPTIONS[selected_tool_name]}</div></div>',
+        unsafe_allow_html=True,
+    )
 else:
-    st.info("**자동 선택**\n\n에이전트가 질문에 맞는 도구를 선택합니다. 보다 정확한 결과를 원하면 기능을 직접 골라주세요.")
+    st.markdown(
+        '<div class="maple-feature-summary"><div class="eyebrow">AUTOMATIC ROUTING</div>'
+        '<div class="description">질문에 맞는 도구를 자동으로 선택합니다. 보다 정확한 결과를 원하면 기능을 직접 골라주세요.</div></div>',
+        unsafe_allow_html=True,
+    )
 
 uploaded_image = None
 if selected_tool_name in {None, "analyze_auction_screenshot"}:
