@@ -1,6 +1,13 @@
 project_id = "maple-story-ai"
 
 [auth]
+site_url = "https://maple-stroy-project.vercel.app"
+additional_redirect_urls = [
+  "http://localhost:3000/auth/callback",
+  "http://127.0.0.1:3000/auth/callback",
+  "https://maple-stroy-project.vercel.app/auth/callback",
+  "https://maple-stroy-project-ed2h.vercel.app/auth/callback",
+]
 enable_anonymous_sign_ins = false
 
 [auth.external.google]
