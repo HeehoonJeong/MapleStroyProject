@@ -112,7 +112,7 @@ export default {
       imageUrl = `data:${image.mimeType};base64,${image.base64}`;
     }
 
-    const userId = context.userClaims?.sub;
+    const userId = context.userClaims?.id;
     if (!userId) return Response.json({ error: "인증된 사용자만 사용할 수 있습니다." }, { status: 401 });
     const { data: allowed, error: quotaError } = await context.supabaseAdmin.rpc("consume_maple_ai_quota", { p_user_id: userId });
     if (quotaError) return Response.json({ error: "요청 한도 확인에 실패했습니다." }, { status: 503 });
