@@ -1,55 +1,89 @@
-# 메이플스토리 AI 도우미
+# MapleStory AI
 
-LangChain 에이전트와 Streamlit 기반의 메이플스토리 AI Agent입니다. 홈에서 기능을 확인하고, 사이드바의 **도구 챗봇** 페이지에서 기능을 선택해 대화합니다.
+목표 배포 구조는 **Next.js 프론트엔드(Vercel) + Supabase Auth/Edge Functions/Postgres + LangChain.js + Nexon Open API**입니다. 기존 Streamlit/Python 코드는 마이그레이션 참고용으로 보존되어 있습니다.
 
-## 구현 기능
+## 구조
 
-1. 캐릭터 닉네임으로 OCID 조회
-2. 레벨·직업·월드 등 기본 정보 조회
-3. 주스탯·전투력·보스 데미지·방어율 무시 등 능력치 조회
-4. 장착 장비·스타포스·잠재능력 조회
-5. HEXA 코어 및 HEXA 스탯 조회
-6. 캐릭터 기본 정보·능력치·장비·HEXA 종합 조회
-7. 예산과 장비 상태를 바탕으로 스펙업 점검 후보 추천
-8. 보스명·파티 인원·캐릭터 능력치에 따른 참고용 추정
-9. 경매장 스크린샷에서 읽을 수 있는 아이템 옵션과 표시 가격 분석
-10. 로컬 Markdown 공략 문서 검색(RAG)
-
-대화의 도구 호출과 최종 답변 모두 **GPT-5.4-nano 하나만** 사용합니다. 최종 답변은 해당 모델의 토큰 스트림으로 화면에 표시됩니다.
-
-## 안전장치
-
-LangChain 미들웨어는 모델 호출 전에 메이플스토리 범위 밖 질문과 알려진 프롬프트 인젝션 패턴을 거절합니다. 도구 응답도 신뢰할 수 없는 입력으로 보고 지시문 패턴을 검사합니다. 이는 규칙 기반의 방어 계층이며 모든 우회 시도를 완벽히 막는 보안 보증은 아닙니다.
-
-## 키 설정
-
-키 입력 UI는 제공하지 않습니다. 로컬 개발은 프로젝트 루트의 `.env`에서 읽습니다.
-
-```env
-NEXON_API_KEY=넥슨_Open_API_키
-OPENAI_API_KEY=OpenAI_API_키
+```text
+frontend/                              # Next.js App Router — Vercel 배포 대상
+  app/                                 # 홈 및 채팅 UI
+  components/assistant.tsx             # Supabase 인증, SSE 스트리밍 채팅
+  lib/features.ts                      # 10개 기능 정의
+supabase/
+  functions/maple-agent/               # GPT-5.4-nano LangChain Agent
+  functions/_shared/                   # Nexon 도구와 안전 미들웨어
+  migrations/                          # pgvector RAG 및 호출 제한 스키마
 ```
 
-넥슨 키는 [NEXON Open API](https://openapi.nexon.com/ko/)에서 애플리케이션을 등록해 발급받습니다. `.env`를 GitHub에 커밋하지 마세요. 배포 시에는 호스팅 서비스의 Secret 환경 변수 또는 Streamlit의 **Settings → Secrets**에 `NEXON_API_KEY`, `OPENAI_API_KEY`를 등록합니다.
+프론트엔드에는 Supabase URL과 **Publishable key**만 둡니다. `OPENAI_API_KEY`, `NEXON_API_KEY`는 Supabase Edge Function Secrets에만 둡니다.
 
-## 실행
+## 로컬 프론트엔드 실행
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
-pip install -r requirements.txt
-streamlit run app.py
+cd frontend
+# frontend/.env.local을 직접 만들고 아래 값 설정
+npm install
+npm run dev
 ```
 
-## RAG 문서 추가
+`frontend/.env.local`:
 
-신뢰할 수 있는 공략 문서를 Markdown으로 저장해 `knowledge_base/` 아래에 추가합니다. 검색 결과에는 파일 경로가 출처로 표시됩니다. 해당 폴더가 비어 있으면 챗봇은 문서가 아직 없다고 안내하며, 검색 근거 없이 공략을 인용하지 않습니다.
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+```
 
-## 유의사항
+브라우저에서 `http://localhost:3000`을 엽니다. Supabase Auth에서 **Anonymous Sign-Ins**를 활성화해야 합니다. 공개 서비스 전에는 CAPTCHA와 추가 abuse 방지 정책도 설정하세요.
 
-- 캐릭터 조회 기준일은 한국 시간 기준 전일입니다.
-- 스펙업 추천은 현재 장착 상태를 바탕으로 한 점검 후보입니다. 경매장 실시간 시세나 아이템 기대 효율을 계산하지 않습니다.
-- 보스 가능성은 공식 클리어 계산기가 아니며, 파티·숙련도·패턴 대응에 따라 달라질 수 있습니다.
-- 스크린샷 분석은 이미지에서 판독 가능한 정보만 다룹니다. 실시간 시세 확인 없이 적정 가격을 단정하지 않습니다.
-- NEXON Open API 데이터를 사용하므로 앱에 **“Data based on NEXON Open API”** 문구를 표시합니다.
-- 페이지 이미지는 앱용으로 생성한 오리지널 일러스트이며 공식 게임 에셋은 아닙니다.
+## Supabase 로컬 실행
+
+Supabase CLI와 Docker가 필요합니다.
+
+```bash
+# supabase/.env를 직접 만들고 OPENAI_API_KEY, NEXON_API_KEY 설정
+supabase start
+supabase db reset
+supabase functions serve maple-agent --env-file supabase/.env
+```
+
+`supabase/.env`에는 `OPENAI_API_KEY`와 `NEXON_API_KEY`를 설정합니다. 이 파일은 Git에 추가하지 마세요.
+
+프론트엔드 로컬 환경에는 로컬 Supabase 주소/Publishable key를 사용합니다. Edge Function은 사용자 JWT를 요구하며, OpenAI/Nexon 키는 브라우저로 전송하지 않습니다.
+
+## 배포
+
+### Supabase
+
+1. Supabase 프로젝트를 만들고 Anonymous Sign-Ins를 활성화합니다.
+2. `supabase link --project-ref <PROJECT_REF>` 후 `supabase db push`를 실행합니다.
+3. Edge Function Secrets를 등록하고 배포합니다.
+
+```bash
+supabase secrets set OPENAI_API_KEY=... NEXON_API_KEY=...
+supabase functions deploy maple-agent
+```
+
+DB 마이그레이션은 `supabase db push`로 적용합니다.
+
+### Vercel
+
+1. Git 저장소를 Vercel에 연결하고 **Root Directory를 `frontend`**로 선택합니다.
+2. `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`를 Vercel 환경 변수에 설정합니다.
+3. Deploy 합니다.
+
+Publishable key는 클라이언트용 공개 키입니다. Supabase Secret/service role key는 절대로 `NEXT_PUBLIC_*` 변수나 프론트엔드에 넣지 마세요.
+
+## 기능
+
+OCID·기본 정보·능력치·장비·HEXA 조회, 종합 스펙 분석, 메소 예산 기반 스펙업 후보, 참고용 보스 분석, 경매장 스크린샷 판독, Supabase pgvector 기반 공략 검색을 제공합니다. 모든 채팅은 GPT-5.4-nano LangChain Agent가 도구를 실행하고 SSE로 답변을 스트리밍합니다.
+
+공략 검색은 `text-embedding-3-small`로 질의를 임베딩하고 Supabase pgvector에서 관련 문서를 찾습니다. 마이그레이션은 테이블과 검색 RPC를 만들지만, 실제 공략 데이터의 적재 파이프라인은 별도로 준비해야 합니다.
+
+## 보안 및 운영 메모
+
+- Edge Function은 Supabase 사용자 JWT를 확인하고 분당 사용자별 8회 요청 제한을 둡니다.
+- 서버 키는 Supabase Secrets에만 저장합니다.
+- 메이플스토리 범위 외 질문, 알려진 프롬프트 인젝션 패턴, 도구 응답 내 지시문 패턴을 LangChain middleware에서 차단합니다. 규칙 기반 방어는 모든 공격을 보장해 차단하지 않습니다.
+- 스펙업·보스 분석은 공식 계산기가 아니며, 실시간 경매장 가격을 보장하지 않습니다.
+- NEXON Open API 데이터 사용 문구를 UI에 표시합니다.
+- `requirements.txt`, `app.py`, `pages/`의 Streamlit 앱은 이전 프로토타입입니다. 새 배포는 `frontend/`와 `supabase/`를 사용합니다.

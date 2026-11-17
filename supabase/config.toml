@@ -1,0 +1,7 @@
+project_id = "maple-story-ai"
+
+[auth]
+enable_anonymous_sign_ins = true
+
+[functions.maple-agent]
+verify_jwt = true
