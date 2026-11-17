@@ -64,10 +64,11 @@ export default function Assistant() {
       setStatus("Supabase 환경 변수를 설정해 주세요");
       return;
     }
+    const authenticatedClient = client as NonNullable<typeof client>;
 
     async function initialize(sessionToken?: string | null) {
       const token = sessionToken === undefined
-        ? (await client.auth.getSession()).data.session?.access_token
+        ? (await authenticatedClient.auth.getSession()).data.session?.access_token
         : sessionToken;
       if (!token) {
         if (!active) return;
@@ -75,7 +76,7 @@ export default function Assistant() {
         router.replace("/");
         return;
       }
-      const { data: { user: currentUser } } = await client.auth.getUser(token);
+      const { data: { user: currentUser } } = await authenticatedClient.auth.getUser(token);
       if (!active) return;
       if (!currentUser) {
         router.replace("/");
@@ -84,7 +85,7 @@ export default function Assistant() {
       setUser(currentUser);
       setAccessToken(token);
       try {
-        const { data, error: roomError } = await client
+        const { data, error: roomError } = await authenticatedClient
           .from("maple_chat_rooms")
           .select("id, title, created_at, updated_at")
           .order("updated_at", { ascending: false });
