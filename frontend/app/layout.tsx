@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Maple Story / AI",
-  description: "메이플스토리 캐릭터와 게임 데이터를 돕는 AI 어시스턴트",
+  title: "MapleStory Chatbot",
+  description: "공식 공지와 게임 문서를 검색해 답하는 메이플스토리 AI 챗봇",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

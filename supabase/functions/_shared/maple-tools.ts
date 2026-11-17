@@ -7,8 +7,17 @@ const TIMEOUT_MS = 12_000;
 export type ToolContext = {
   nexonKey: string;
   openAiKey: string;
+  upstageKey: string;
   supabaseAdmin: any;
   imageAttached: boolean;
+};
+
+export type GuideDocument = {
+  content: string;
+  source: string;
+  title: string;
+  url: string | null;
+  similarity: number;
 };
 
 function latestAvailableDate() {
@@ -195,20 +204,29 @@ export function buildMapleTools(context: ToolContext) {
 }
 
 async function searchGuide(query: string, context: ToolContext) {
-  const embeddingResponse = await fetch("https://api.openai.com/v1/embeddings", {
+  const data = await searchGuideDocuments(query, context);
+  return data.length ? JSON.stringify(data) : "관련 공략 문서를 찾지 못했습니다.";
+}
+
+export async function searchGuideDocuments(
+  query: string,
+  context: Pick<ToolContext, "upstageKey" | "supabaseAdmin">,
+): Promise<GuideDocument[]> {
+  if (!context.upstageKey) throw new Error("서버에 UPSTAGE_API_KEY가 설정되지 않았습니다.");
+  const embeddingResponse = await fetch("https://api.upstage.ai/v1/embeddings", {
     method: "POST",
-    headers: { Authorization: `Bearer ${context.openAiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "text-embedding-3-small", input: query }),
+    headers: { Authorization: `Bearer ${context.upstageKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "solar-embedding-2-query", input: query }),
   });
   if (!embeddingResponse.ok) throw new Error("공략 검색용 임베딩 생성에 실패했습니다.");
   const payload = await embeddingResponse.json();
   const queryEmbedding = payload?.data?.[0]?.embedding;
   if (!Array.isArray(queryEmbedding)) throw new Error("임베딩 결과가 올바르지 않습니다.");
-  const { data, error } = await context.supabaseAdmin.rpc("match_maple_guide_chunks", {
+  const { data, error } = await context.supabaseAdmin.rpc("match_maple_guide_chunks_upstage", {
     query_embedding: queryEmbedding,
-    match_count: 4,
-    match_threshold: 0.25,
+    match_count: 5,
+    match_threshold: 0.3,
   });
-  if (error) return "Supabase 공략 벡터 데이터가 아직 준비되지 않았습니다.";
-  return data?.length ? JSON.stringify(data) : "관련 공략 문서를 찾지 못했습니다.";
+  if (error) throw new Error("Supabase 공략 벡터 검색에 실패했습니다.");
+  return (data ?? []) as GuideDocument[];
 }

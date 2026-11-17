@@ -2,38 +2,49 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 import { features, type FeatureId } from "@/lib/features";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
+type Citation = { title: string; source: string; url?: string | null };
 type ChatMessage = {
+  id?: string;
   role: "user" | "assistant";
   content: string;
+  created_at: string;
+  sources?: Citation[];
   character?: CharacterProfile;
 };
-
-type CharacterProfile = {
-  image?: string;
-  name?: string;
-  level?: number | string;
-  job?: string;
-  world?: string;
+type ChatRoom = { id: string; title: string; created_at: string; updated_at: string };
+type CharacterProfile = { image?: string; name?: string; level?: number | string; job?: string; world?: string };
+type StreamEvent = {
+  type?: string;
+  text?: string;
+  message?: string;
+  profile?: CharacterProfile;
+  sources?: Citation[];
 };
 
-type StreamEvent = { type?: string; text?: string; message?: string; profile?: CharacterProfile };
-
 export default function Assistant() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [rooms, setRooms] = useState<ChatRoom[]>([]);
+  const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null);
   const [featureId, setFeatureId] = useState<FeatureId | "auto">("auto");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [prompt, setPrompt] = useState("");
   const [image, setImage] = useState<File | null>(null);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("SUPABASE AUTH INITIALIZING");
+  const [status, setStatus] = useState("로그인 상태를 확인하고 있어요");
   const [error, setError] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
   const previewUrl = useMemo(() => image ? URL.createObjectURL(image) : "", [image]);
   const currentFeature = features.find((item) => item.id === featureId);
+  const displayName = user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? user?.email ?? "용사님";
+  const avatar = user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture;
 
   useEffect(() => {
     const queryFeature = new URLSearchParams(window.location.search).get("feature");
@@ -48,36 +59,92 @@ export default function Assistant() {
 
   useEffect(() => {
     let active = true;
-    async function initializeAuth() {
-      const client = getSupabaseClient();
-      if (!client) {
-        setStatus("SET FRONTEND SUPABASE ENVIRONMENT VARIABLES");
+    const client = getSupabaseClient();
+    if (!client) {
+      setStatus("Supabase 환경 변수를 설정해 주세요");
+      return;
+    }
+
+    async function initialize(sessionToken?: string | null) {
+      const token = sessionToken === undefined
+        ? (await client.auth.getSession()).data.session?.access_token
+        : sessionToken;
+      if (!token) {
+        if (!active) return;
+        setReady(false);
+        router.replace("/");
         return;
       }
-      const { data: { session } } = await client.auth.getSession();
-      let token = session?.access_token;
-      if (!token) {
-        const { data, error: authError } = await client.auth.signInAnonymously();
-        if (authError) {
-          setStatus("AUTHENTICATION FAILED");
-          setError("Supabase 대시보드에서 Anonymous Sign-Ins를 활성화하고 설정을 확인해 주세요.");
-          return;
-        }
-        token = data.session?.access_token;
+      const { data: { user: currentUser } } = await client.auth.getUser(token);
+      if (!active) return;
+      if (!currentUser) {
+        router.replace("/");
+        return;
       }
-      if (active && token) {
-        setAccessToken(token);
+      setUser(currentUser);
+      setAccessToken(token);
+      try {
+        const { data, error: roomError } = await client
+          .from("maple_chat_rooms")
+          .select("id, title, created_at, updated_at")
+          .order("updated_at", { ascending: false });
+        if (roomError) throw roomError;
+        if (!active) return;
+        setRooms((data ?? []) as ChatRoom[]);
+        setStatus("준비 완료 · 공지와 공략을 검색합니다");
         setReady(true);
-        setStatus("READY · GPT-5.4-NANO STREAMING");
+      } catch {
+        if (!active) return;
+        setError("채팅 목록을 불러오지 못했습니다. 데이터베이스 마이그레이션과 로그인을 확인해 주세요.");
+        setStatus("데이터베이스 연결 오류");
       }
     }
-    void initializeAuth();
-    return () => { active = false; };
-  }, []);
+
+    void initialize();
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
+
+  async function refreshRooms() {
+    const client = getSupabaseClient();
+    if (!client) return;
+    const { data } = await client
+      .from("maple_chat_rooms")
+      .select("id, title, created_at, updated_at")
+      .order("updated_at", { ascending: false });
+    if (data) setRooms(data as ChatRoom[]);
+  }
+
+  async function openRoom(room: ChatRoom) {
+    if (busy) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+    setError("");
+    const { data, error: loadError } = await client
+      .from("maple_chat_messages")
+      .select("id, role, content, sources, created_at")
+      .eq("room_id", room.id)
+      .order("created_at", { ascending: true });
+    if (loadError) {
+      setError("대화 내용을 불러오지 못했습니다.");
+      return;
+    }
+    setSelectedRoom(room);
+    setMessages((data ?? []) as ChatMessage[]);
+  }
+
+  async function signOut() {
+    const client = getSupabaseClient();
+    if (!client) return;
+    const { error: signOutError } = await client.auth.signOut();
+    if (signOutError) setError(signOutError.message);
+    else router.replace("/");
+  }
 
   function useExample(example: string) {
     setPrompt(example);
@@ -86,23 +153,62 @@ export default function Assistant() {
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = prompt.trim();
-    if (!text || busy || !ready || !accessToken) return;
+    if (!text || busy || !ready || !accessToken || !user) return;
+    const client = getSupabaseClient();
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    if (!client || !supabaseUrl || !publishableKey) {
+      setError("Supabase 설정을 확인해 주세요.");
+      return;
+    }
+
     setError("");
     setPrompt("");
     setBusy(true);
-    setStatus("GPT-5.4-NANO IS WORKING");
-    const userMessage: ChatMessage = { role: "user", content: text };
-    const assistantMessage: ChatMessage = { role: "assistant", content: "" };
-    setMessages((previous) => [...previous, userMessage, assistantMessage]);
+    setStatus("질문에 맞는 문서와 데이터를 찾고 있어요");
+    const previousMessages = messages;
+    const localUserMessage: ChatMessage = { role: "user", content: text, created_at: new Date().toISOString() };
+    setMessages((previous) => [...previous, localUserMessage, {
+      role: "assistant", content: "", created_at: new Date().toISOString(),
+    }]);
 
+    let room = selectedRoom;
+    let answer = "";
+    let citations: Citation[] = [];
     try {
-      const client = getSupabaseClient();
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-      if (!client || !supabaseUrl || !publishableKey) throw new Error("Supabase 설정을 확인해 주세요.");
+      if (!room) {
+        const { data, error: createError } = await client
+          .from("maple_chat_rooms")
+          .insert({ user_id: user.id, title: text.slice(0, 56) || "새 대화" })
+          .select("id, title, created_at, updated_at")
+          .single();
+        if (createError || !data) throw createError ?? new Error("채팅방을 만들지 못했습니다.");
+        room = data as ChatRoom;
+        setSelectedRoom(room);
+      } else if (previousMessages.length === 0) {
+        const { data } = await client
+          .from("maple_chat_rooms")
+          .update({ title: text.slice(0, 56) || "새 대화" })
+          .eq("id", room.id)
+          .select("id, title, created_at, updated_at")
+          .single();
+        if (data) {
+          room = data as ChatRoom;
+          setSelectedRoom(room);
+        }
+      }
+
+      const { error: userSaveError } = await client.from("maple_chat_messages").insert({
+        room_id: room.id,
+        user_id: user.id,
+        role: "user",
+        content: text,
+      });
+      if (userSaveError) throw userSaveError;
+      void refreshRooms();
+
       const { data: { session } } = await client.auth.getSession();
       const currentToken = session?.access_token ?? accessToken;
-      if (!currentToken) throw new Error("Supabase 인증 세션이 없습니다. 페이지를 새로고침해 주세요.");
       const imageData = image ? await readImage(image) : undefined;
       const response = await fetch(`${supabaseUrl}/functions/v1/maple-agent`, {
         method: "POST",
@@ -114,7 +220,7 @@ export default function Assistant() {
         body: JSON.stringify({
           prompt: text,
           feature: featureId,
-          history: messages.slice(-12).map(({ role, content }) => ({ role, content })),
+          history: previousMessages.slice(-12).map(({ role, content }) => ({ role, content })),
           image: imageData,
         }),
       });
@@ -136,16 +242,39 @@ export default function Assistant() {
       }
       buffer += decoder.decode();
       if (buffer.trim()) processFrame(buffer);
-      setStatus("READY · GPT-5.4-NANO STREAMING");
+
+      const { error: answerSaveError } = await client.from("maple_chat_messages").insert({
+        room_id: room.id,
+        user_id: user.id,
+        role: "assistant",
+        content: answer || "답변을 생성하지 못했습니다.",
+        sources: citations,
+      });
+      if (answerSaveError) {
+        setError("답변은 생성했지만 대화 저장에 실패했습니다. 데이터베이스 정책을 확인해 주세요.");
+      }
+      setStatus("준비 완료 · 공지와 공략을 검색합니다");
+      void refreshRooms();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "요청을 처리하지 못했습니다.";
       setError(message);
+      const fallback = answer || "요청을 처리하지 못했습니다.";
       setMessages((previous) => previous.map((item, index) =>
         index === previous.length - 1 && item.role === "assistant"
-          ? { ...item, content: item.content || "요청을 처리하지 못했습니다." }
+          ? { ...item, content: fallback, sources: citations }
           : item,
       ));
-      setStatus("REQUEST FAILED");
+      if (room && user) {
+        await client.from("maple_chat_messages").insert({
+          room_id: room.id,
+          user_id: user.id,
+          role: "assistant",
+          content: fallback,
+          sources: citations,
+        });
+        void refreshRooms();
+      }
+      setStatus("요청 처리에 실패했습니다");
     } finally {
       setBusy(false);
       setImage(null);
@@ -162,6 +291,7 @@ export default function Assistant() {
       let event: StreamEvent;
       try { event = JSON.parse(data) as StreamEvent; } catch { return; }
       if (eventType === "token" && event.text) {
+        answer += event.text;
         setMessages((previous) => previous.map((item, index) =>
           index === previous.length - 1 && item.role === "assistant"
             ? { ...item, content: item.content + event.text }
@@ -173,8 +303,15 @@ export default function Assistant() {
             ? { ...item, character: event.profile }
             : item,
         ));
+      } else if (eventType === "sources" && event.sources) {
+        citations = event.sources;
+        setMessages((previous) => previous.map((item, index) =>
+          index === previous.length - 1 && item.role === "assistant"
+            ? { ...item, sources: citations }
+            : item,
+        ));
       } else if (eventType === "status" && event.message) {
-        setStatus(event.message.toUpperCase());
+        setStatus(event.message);
       } else if (eventType === "error") {
         throw new Error(event.message ?? "요청을 처리하지 못했습니다.");
       }
@@ -182,71 +319,98 @@ export default function Assistant() {
   }
 
   return (
-    <main className="site-shell">
-      <div className="wordmark">MAPLE / AI</div>
+    <main className="site-shell assistant-shell">
+      <nav className="topbar">
+        <Link className="wordmark" href="/">MAPLE / AI</Link>
+        <div className="profile-actions">
+          {avatar && <img className="avatar" src={avatar} alt="프로필" referrerPolicy="no-referrer" />}
+          <span className="profile-name">{displayName}</span>
+          <button className="text-button compact-button" type="button" onClick={signOut}>로그아웃</button>
+        </div>
+      </nav>
+
       <header className="assistant-header">
         <div>
-          <p className="eyebrow">CHARACTER DATA · AI ASSISTANT</p>
-          <h1>도구 챗봇</h1>
-          <p>GPT-5.4-nano 에이전트가 도구를 실행하고 최종 답변을 스트리밍합니다.</p>
+          <p className="eyebrow">MAPLESTORY KNOWLEDGE · RAG CHAT</p>
+          <h1>무엇이 궁금하세요?</h1>
+          <p>공식 공지와 문서를 검색해 답하고, 참고한 출처를 함께 보여드립니다.</p>
         </div>
-        <img className="assistant-art" src="/assets/maple_tools_banner.png" alt="단풍나무 아래의 판타지 포털" />
+        <img className="assistant-art" src="/assets/maple_tools_banner.png" alt="단풍나무 아래 판타지 포털" />
       </header>
 
       <div className="assistant-layout">
         <aside className="tool-panel">
-          <label className="eyebrow" htmlFor="feature-select">SELECT A TOOL</label>
-          <select id="feature-select" className="tool-select" value={featureId} onChange={(e) => setFeatureId(e.target.value as FeatureId | "auto")}>
-            <option value="auto">자동 선택</option>
+          <div className="room-heading"><span className="eyebrow">YOUR CHATS</span><button className="text-button compact-button" type="button" disabled={busy} onClick={() => { setSelectedRoom(null); setMessages([]); setError(""); }}>+ 새 대화</button></div>
+          <div className="room-list">
+            {rooms.length === 0 && <p className="disclaimer">저장된 대화가 없습니다.</p>}
+            {rooms.map((room) => (
+              <button className={`room-button${selectedRoom?.id === room.id ? " active" : ""}`} type="button" key={room.id} onClick={() => void openRoom(room)} disabled={busy}>
+                <span>{room.title}</span><small>{formatTime(room.updated_at)}</small>
+              </button>
+            ))}
+          </div>
+
+          <label className="eyebrow" htmlFor="feature-select">질문 도구</label>
+          <select id="feature-select" className="tool-select" value={featureId} onChange={(event) => setFeatureId(event.target.value as FeatureId | "auto")}>
+            <option value="auto">자동으로 선택</option>
             {features.map((feature) => <option value={feature.id} key={feature.id}>{feature.number} / {feature.title}</option>)}
           </select>
           <div className="tool-summary">
-            <div className="eyebrow">{currentFeature ? `${currentFeature.number} / ${currentFeature.title}` : "AUTOMATIC ROUTING"}</div>
-            <p>{currentFeature?.description ?? "질문에 맞는 도구를 에이전트가 선택합니다."}</p>
-            <p className="feature-note">{currentFeature?.note ?? "보다 정확한 결과를 원하면 기능을 직접 선택하세요."}</p>
+            <div className="eyebrow">{currentFeature ? `${currentFeature.number} / ${currentFeature.title}` : "RAG · 자동 검색"}</div>
+            <p>{currentFeature?.description ?? "질문과 관련된 공지·공략 문서를 의미 검색하고, 필요한 경우 캐릭터 데이터를 조회합니다."}</p>
           </div>
-          <div className="eyebrow">EXAMPLE PROMPT</div>
+          <div className="eyebrow">질문 예시</div>
           <div className="quick-prompts">
-            {(currentFeature ? [currentFeature.example] : [features[1].example, features[5].example]).map((example) => (
-              <button className="text-button" type="button" key={example} onClick={() => useExample(example)}>{example}</button>
+            {(currentFeature ? [currentFeature.example] : ["마일리지 개편과 소멸 일정을 알려줘", "캐릭터 장비를 보고 스펙업할 점을 알려줘"]).map((example) => (
+              <button className="text-button prompt-example" type="button" key={example} onClick={() => useExample(example)}>{example}</button>
             ))}
           </div>
           <div className="upload-row">
-            <label htmlFor="auction-image">SCREENSHOT · MAX 8MB</label>
-            <input id="auction-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
+            <label htmlFor="auction-image">이미지 첨부 · 최대 8MB</label>
+            <input id="auction-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setImage(event.target.files?.[0] ?? null)} />
           </div>
-          {image && previewUrl && <img className="assistant-art" src={previewUrl} alt="첨부한 경매장 스크린샷" />}
-          <button className="text-button" type="button" onClick={() => setMessages([])} style={{ marginTop: 20 }}>대화 초기화</button>
+          {image && <p className="disclaimer">첨부: {image.name} <button className="inline-button" type="button" onClick={() => setImage(null)}>삭제</button></p>}
         </aside>
 
         <section className="chat-panel" aria-label="메이플스토리 AI 채팅">
           <div className="status-text" aria-live="polite">{status}</div>
           <div className="chat-log" ref={logRef}>
-            {messages.length === 0 && <p className="disclaimer">캐릭터명과 궁금한 내용을 입력해 대화를 시작하세요.</p>}
+            {messages.length === 0 && <div className="chat-empty"><span className="eyebrow">A BETTER WAY TO PLAY</span><h2>메이플의 다음 모험을<br />함께 준비해요.</h2><p>공지, 이벤트, 육성, 캐릭터에 관해 질문해 보세요.</p></div>}
             {messages.map((message, index) => (
-              <article className="message" key={`${index}-${message.role}`}>
-                <div className="message-role">{message.role === "user" ? "YOU" : "MAPLE / AI"}</div>
+              <article className="message" key={message.id ?? `${index}-${message.role}`}>
+                <div className="message-meta"><div className="message-role">{message.role === "user" ? "나" : "MAPLE / AI"}</div><time>{formatTime(message.created_at)}</time></div>
                 {message.character?.image && (
                   <div className="character-profile">
                     <img src={message.character.image} alt={`${message.character.name ?? "캐릭터"} 이미지`} />
                     <span>{[message.character.name, message.character.level && `Lv.${message.character.level}`, message.character.job, message.character.world].filter(Boolean).join(" · ")}</span>
                   </div>
                 )}
-                <div className="message-content">{message.content || (busy && index === messages.length - 1 ? "" : "")}</div>
+                <div className="message-content">{message.content || (busy && index === messages.length - 1 ? "답변을 작성하고 있어요…" : "")}</div>
+                {!!message.sources?.length && (
+                  <div className="source-list"><span className="eyebrow">참고한 문서</span>{message.sources.map((source, sourceIndex) => (
+                    <a className="source-link" href={source.url || undefined} target={source.url ? "_blank" : undefined} rel={source.url ? "noreferrer" : undefined} key={`${source.source}-${sourceIndex}`}>
+                      <span>{source.title}</span><small>{source.source}</small>
+                    </a>
+                  ))}</div>
+                )}
               </article>
             ))}
           </div>
-          {!ready && <p className="disclaimer">Supabase URL/Publishable Key와 Anonymous Sign-Ins 설정이 필요합니다.</p>}
+          {!ready && <p className="disclaimer">Google 계정과 Supabase 설정을 확인하고 있습니다.</p>}
           {error && <p className="error-text" role="alert">{error}</p>}
           <form className="chat-form" onSubmit={onSubmit}>
-            <input className="chat-input" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="캐릭터명과 질문을 입력하세요" disabled={!ready || busy} />
-            <button className="outline-button" type="submit" disabled={!ready || busy || !prompt.trim()}>{busy ? "처리 중" : "전송 →"}</button>
+            <input className="chat-input" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="공지, 공략, 캐릭터에 관해 물어보세요…" disabled={!ready || busy} />
+            <button className="outline-button" type="submit" disabled={!ready || busy || !prompt.trim()}>{busy ? "검색 중…" : "전송 →"}</button>
           </form>
         </section>
       </div>
-      <footer className="footer">Data based on NEXON Open API</footer>
+      <footer className="footer">답변은 참고용입니다. 최신 공지와 정확한 정보는 연결된 넥슨 공식 출처를 확인하세요.</footer>
     </main>
   );
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
 
 async function readImage(file: File): Promise<{ mimeType: string; base64: string }> {

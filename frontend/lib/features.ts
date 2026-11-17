@@ -109,6 +109,6 @@ export const features: Feature[] = [
     summary: "Supabase에 등록한 Markdown 공략을 검색합니다.",
     description: "저장된 공략 문서를 의미 기반 검색하고 관련 문단과 출처를 답변에 제공합니다.",
     example: "아케인 심볼 강화 정보를 찾아줘",
-    note: "검색을 사용하려면 Supabase에 문서와 임베딩을 적재해야 합니다.",
+    note: "dataset/ 문서를 Supabase에 임베딩 적재한 뒤 검색할 수 있습니다.",
   },
 ];
