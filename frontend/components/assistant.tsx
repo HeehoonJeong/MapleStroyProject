@@ -261,7 +261,7 @@ export default function Assistant() {
         room_id: room.id,
         user_id: user.id,
         role: "assistant",
-        content: answer || "답변을 생성하지 못했습니다.",
+        content: cleanCharacterImageUrls(answer) || "답변을 생성하지 못했습니다.",
         sources: citations,
       });
       if (answerSaveError) {
@@ -405,7 +405,7 @@ export default function Assistant() {
                     <span>{[message.character.name, message.character.level && `Lv.${message.character.level}`, message.character.job, message.character.world].filter(Boolean).join(" · ")}</span>
                   </div>
                 )}
-                <div className="message-content">{message.content || (busy && index === messages.length - 1 ? "답변을 작성하고 있어요…" : "")}</div>
+                <div className="message-content">{cleanCharacterImageUrls(message.content) || (busy && index === messages.length - 1 ? "답변을 작성하고 있어요…" : "")}</div>
                 {!!message.sources?.length && (
                   <div className="source-list"><span className="eyebrow">참고한 문서</span>{message.sources.map((source, sourceIndex) => (
                     <a className="source-link" href={source.url || undefined} target={source.url ? "_blank" : undefined} rel={source.url ? "noreferrer" : undefined} key={`${source.source}-${sourceIndex}`}>
@@ -470,4 +470,9 @@ function CharacterCard({ character }: { character: SavedCharacter }) {
 function formatPower(value: string) {
   const parsed = Number(value.replaceAll(",", ""));
   return Number.isFinite(parsed) ? parsed.toLocaleString("ko-KR") : value;
+}
+
+function cleanCharacterImageUrls(text: string) {
+  return text.replace(/^[ \t]*[-*]?[ \t]*(?:캐릭터\s*이미지|character_image)[ \t]*[:：]?[ \t]*(?:\r?\n[ \t]*)?https?:\/\/[^\s]+[ \t]*$/gim, "")
+    .replace(/https?:\/\/open\.api\.nexon\.com\/static\/maplestory\/character\/look\/[^\s]+/gi, "");
 }
