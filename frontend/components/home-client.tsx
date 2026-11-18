@@ -85,7 +85,7 @@ export default function HomeClient() {
           {!configured && <p className="disclaimer">시작하려면 `frontend/.env.local`에 Supabase 설정을 추가하세요.</p>}
           <div className="landing-proof"><span>RAG 문서 검색</span><span>계정별 대화 저장</span><span>넥슨 API 연동</span></div>
         </div>
-        <img className="landing-art" src="/assets/maple_home_hero.png" alt="단풍 숲을 탐험하는 판타지 모험가" />
+        <video className="landing-art" autoPlay muted loop playsInline preload="auto" poster="/assets/maple-battle.png" aria-label="메이플스토리 게임 플레이 영상"><source src="/assets/maple-intro.mp4" type="video/mp4" /></video>
       </section>
 
       <section className="landing-details" aria-label="서비스 소개">

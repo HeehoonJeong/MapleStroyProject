@@ -354,7 +354,7 @@ export default function Assistant() {
           <h1>무엇이 궁금하세요?</h1>
           <p>공식 공지와 문서를 검색해 답하고, 참고한 출처를 함께 보여드립니다.</p>
         </div>
-        <img className="assistant-art" src="/assets/maple_tools_banner.png" alt="단풍나무 아래 판타지 포털" />
+        <img className="assistant-art" src="/assets/maple-battle.png" alt="메이플스토리 전투 장면" />
       </header>
 
       <div className="assistant-layout">
