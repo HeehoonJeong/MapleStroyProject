@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { features, type FeatureId } from "@/lib/features";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import Notices from "@/components/notices";
 
 type Citation = { title: string; source: string; url?: string | null };
 type ChatMessage = {
@@ -37,6 +38,7 @@ type StreamEvent = {
 export default function Assistant() {
   const router = useRouter();
   const [savedCharacter, setSavedCharacter] = useState<SavedCharacter | null>(null);
+  const [view, setView] = useState<"chat" | "notices">("chat");
   const [user, setUser] = useState<User | null>(null);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null);
@@ -148,6 +150,7 @@ export default function Assistant() {
       setError("대화 내용을 불러오지 못했습니다.");
       return;
     }
+    setView("chat");
     setSelectedRoom(room);
     setMessages((data ?? []) as ChatMessage[]);
   }
@@ -360,7 +363,8 @@ export default function Assistant() {
       <div className="assistant-layout">
         <aside className="tool-panel">
           {savedCharacter && <CharacterCard character={savedCharacter} />}
-          <div className="room-heading"><span className="eyebrow">YOUR CHATS</span><button className="text-button compact-button" type="button" disabled={busy} onClick={() => { setSelectedRoom(null); setMessages([]); setError(""); }}>+ 새 대화</button></div>
+          <nav className="section-nav" aria-label="서비스 메뉴"><button type="button" className={view === "chat" ? "active" : ""} aria-current={view === "chat" ? "page" : undefined} onClick={() => setView("chat")}>대화 <span>↗</span></button><button type="button" className={view === "notices" ? "active" : ""} aria-current={view === "notices" ? "page" : undefined} onClick={() => setView("notices")}>공지사항 <span>↗</span></button></nav>
+          <div className="room-heading"><span className="eyebrow">YOUR CHATS</span><button className="text-button compact-button" type="button" disabled={busy} onClick={() => { setView("chat"); setSelectedRoom(null); setMessages([]); setError(""); }}>+ 새 대화</button></div>
           <div className="room-list">
             {rooms.length === 0 && <p className="disclaimer">저장된 대화가 없습니다.</p>}
             {rooms.map((room) => (
@@ -392,7 +396,8 @@ export default function Assistant() {
           {image && <p className="disclaimer">첨부: {image.name} <button className="inline-button" type="button" onClick={() => setImage(null)}>삭제</button></p>}
         </aside>
 
-        <section className="chat-panel" aria-label="메이플스토리 AI 채팅">
+        {view === "notices" && ready && <Notices />}
+        <section hidden={view !== "chat"} className="chat-panel" aria-label="메이플스토리 AI 채팅">
           <div className="status-text" aria-live="polite">{status}</div>
           <div className="chat-log" ref={logRef}>
             {messages.length === 0 && <div className="chat-empty"><span className="eyebrow">A BETTER WAY TO PLAY</span><h2>메이플의 다음 모험을<br />함께 준비해요.</h2><p>공지, 이벤트, 육성, 캐릭터에 관해 질문해 보세요.</p></div>}
