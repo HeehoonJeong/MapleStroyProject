@@ -115,6 +115,8 @@ NOTICE_SYNC_SECRET=...
 
 공지 API는 네 가지 목록과 상세 API를 제공합니다: 일반 공지(`notice`), 업데이트(`notice-update`), 이벤트(`notice-event`), 캐시샵(`notice-cashshop`). `sync-maple-notices`는 각 목록의 `notice_id`를 사용해 상세 본문을 가져오고, HTML을 텍스트로 정리한 뒤 chunk로 나눕니다. 공지 유형+ID로 중복을 막고 본문 SHA-256이 바뀐 항목만 `solar-embedding-2-passage`로 다시 임베딩합니다. 공지 본문과 벡터는 `maple_notices`, `maple_notice_chunks`에 저장됩니다.
 
+공지 RAG는 최근 사용자 질문 맥락을 이어받고, “최근 30일”, “이번 달”, “2026년 10월”처럼 표현된 기간을 한국 시간 기준 실제 날짜 조건으로 바꿔 검색합니다. 검색 결과는 공지 단위로 중복을 합쳐 원문 링크와 함께 보여줍니다.
+
 함수를 배포하고 나면 최초 동기화는 서버에서 직접 호출할 수 있습니다. `NOTICE_SYNC_SECRET`은 Supabase Function Secret에 설정한 값과 동일하게 사용하세요.
 NEXON Open API 애플리케이션에 **공지 정보 조회 API 권한**이 켜져 있는지도 확인하세요.
 

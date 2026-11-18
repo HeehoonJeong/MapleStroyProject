@@ -75,7 +75,8 @@ export function createMapleGuardrail(feature: string, imageAttached: boolean) {
         }
 
         const previousText = humans.slice(-7, -1).map(textOf).join(" ");
-        const followUp = /^(?:(?:그럼|그러면)\s*)?(?:그거|이거|이건|저건|왜|어떻게|뭐부터|더 알려(?:줘)?|자세히(?: 알려줘)?|추천해(?:줘)?|비교해(?:줘)?|what about it|why|how about it|tell me more)[?.!\s]*$/i.test(latest.trim());
+        const followUp = /^(?:(?:그럼|그러면|그리고)\s*)?(?:그거|이거|이건|저건|왜|어떻게|뭐부터|더 알려(?:줘)?|자세히(?: 알려줘)?|추천해(?:줘)?|비교해(?:줘)?|다시(?:\s|$)|오늘 기준|지난\s*\d+일|최근\s*\d+일|what about it|why|how about it|tell me more)[?.!\s\d가-힣]*$/i.test(latest.trim())
+          || /(?:최근|지난)\s*\d+\s*일|오늘 기준|다시\s*(?:뽑|찾|검색|조회|정리|요약)|기간을?\s*(?:바꿔|조정)/i.test(latest);
         const shortCharacterName = characterFeatures.has(feature) && latest.trim().length <= 20 && latest.trim().split(/\s+/).length <= 2;
         const allowed = isMapleRelated(latest)
           || (followUp && isMapleRelated(previousText))

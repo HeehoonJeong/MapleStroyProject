@@ -4,12 +4,65 @@ import { z } from "zod";
 const API_BASE = "https://open.api.nexon.com/maplestory/v1";
 const TIMEOUT_MS = 12_000;
 
+function kstToday() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function shiftDate(dateString: string, days: number) {
+  const date = new Date(`${dateString}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function noticeDateRange(
+  text: string,
+  dateFilter: "auto" | "all" | "last_30_days" | "last_7_days" | "this_month",
+): { start: string | null; end: string | null } {
+  const normalized = text.toLowerCase();
+  const today = kstToday();
+  if (dateFilter === "all") return { start: null, end: null };
+  if (dateFilter === "last_30_days" || (dateFilter === "auto" && /(최근\s*30\s*일|지난\s*30\s*일|last\s+30\s+days)/i.test(normalized))) {
+    return { start: shiftDate(today, -29), end: today };
+  }
+  if (dateFilter === "last_7_days" || (dateFilter === "auto" && /(최근\s*7\s*일|지난\s*7\s*일|last\s+7\s+days)/i.test(normalized))) {
+    return { start: shiftDate(today, -6), end: today };
+  }
+
+  if (dateFilter === "this_month" || (dateFilter === "auto" && /(이번\s*달|this\s+month)/i.test(normalized))) {
+    const todayParts = today.split("-").map(Number);
+    return { start: `${todayParts[0]}-${String(todayParts[1]).padStart(2, "0")}-01`, end: today };
+  }
+
+  if (dateFilter === "auto") {
+    const explicitMonth = normalized.match(/(20\d{2})\s*년\s*(1[0-2]|0?[1-9])\s*월/);
+    const monthOnly = normalized.match(/(?:^|\s)(1[0-2]|0?[1-9])\s*월/);
+    const match = explicitMonth ?? monthOnly;
+    if (match) {
+      const todayParts = today.split("-").map(Number);
+      const year = explicitMonth
+        ? Number(explicitMonth[1])
+        : Number(match[1]) > todayParts[1] ? todayParts[0] - 1 : todayParts[0];
+      const month = Number(explicitMonth ? explicitMonth[2] : match[1]);
+      const start = `${year}-${String(month).padStart(2, "0")}-01`;
+      const end = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+      return { start, end };
+    }
+  }
+  return { start: null, end: null };
+}
+
 export type ToolContext = {
   nexonKey: string;
   openAiKey: string;
   upstageKey: string;
   supabaseAdmin: any;
   imageAttached: boolean;
+  searchContext?: string;
 };
 
 export type GuideDocument = {
@@ -195,10 +248,12 @@ export function buildMapleTools(context: ToolContext) {
     schema: z.object({ query: z.string().min(2).max(500) }),
   });
 
-  const notices = tool(async ({ query, notice_type }) => {
+  const notices = tool(async ({ query, notice_type, date_filter }) => {
     try {
-      const results = await searchMapleNotices(query, context, notice_type);
-      return results.length ? JSON.stringify(results) : "관련된 공식 메이플스토리 공지를 찾지 못했습니다.";
+      const results = await searchMapleNotices(query, context, notice_type, date_filter);
+      return results.notices.length
+        ? JSON.stringify(results)
+        : JSON.stringify({ ...results, message: "적용한 기간 조건에 맞는 공식 공지가 없습니다." });
     } catch (error) {
       return `공지 검색 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`;
     }
@@ -208,6 +263,7 @@ export function buildMapleTools(context: ToolContext) {
     schema: z.object({
       query: z.string().min(2).max(500),
       notice_type: z.enum(["all", "notice", "update", "event", "cashshop"]).default("all"),
+      date_filter: z.enum(["auto", "all", "last_30_days", "last_7_days", "this_month"]).default("auto"),
     }),
   });
 
@@ -235,12 +291,15 @@ async function searchMapleNotices(
   query: string,
   context: ToolContext,
   noticeType: "all" | "notice" | "update" | "event" | "cashshop",
-): Promise<NoticeDocument[]> {
+  requestedDateFilter: "auto" | "all" | "last_30_days" | "last_7_days" | "this_month",
+): Promise<{ query_context: string; date_range: { start: string | null; end: string | null }; notices: NoticeDocument[] }> {
   if (!context.upstageKey) throw new Error("서버에 UPSTAGE_API_KEY가 설정되지 않았습니다.");
+  const fullQuery = [context.searchContext, query].filter(Boolean).join("\n");
+  const dateRange = noticeDateRange(fullQuery, requestedDateFilter);
   const response = await fetch("https://api.upstage.ai/v1/embeddings", {
     method: "POST",
     headers: { Authorization: `Bearer ${context.upstageKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "solar-embedding-2-query", input: query }),
+    body: JSON.stringify({ model: "solar-embedding-2-query", input: fullQuery }),
   });
   if (!response.ok) throw new Error("공지 검색용 임베딩 생성에 실패했습니다.");
   const payload = await response.json();
@@ -252,6 +311,8 @@ async function searchMapleNotices(
     match_count: 10,
     match_threshold: 0.3,
     filter_notice_type: noticeType === "all" ? null : noticeType,
+    filter_start_date: dateRange.start,
+    filter_end_date: dateRange.end,
   });
   if (error) throw new Error("Supabase 공지 Vector DB를 조회하지 못했습니다.");
   const byNotice = new Map<string, NoticeDocument>();
@@ -271,7 +332,11 @@ async function searchMapleNotices(
     }
     existing.similarity = Math.max(existing.similarity, row.similarity);
   }
-  return [...byNotice.values()].sort((a, b) => b.similarity - a.similarity).slice(0, 6);
+  return {
+    query_context: fullQuery,
+    date_range: dateRange,
+    notices: [...byNotice.values()].sort((a, b) => b.similarity - a.similarity).slice(0, 6),
+  };
 }
 
 export async function searchGuideDocuments(
