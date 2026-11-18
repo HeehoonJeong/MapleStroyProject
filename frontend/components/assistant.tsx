@@ -359,6 +359,7 @@ export default function Assistant() {
 
       <div className="assistant-layout">
         <aside className="tool-panel">
+          {savedCharacter && <CharacterCard character={savedCharacter} />}
           <div className="room-heading"><span className="eyebrow">YOUR CHATS</span><button className="text-button compact-button" type="button" disabled={busy} onClick={() => { setSelectedRoom(null); setMessages([]); setError(""); }}>+ 새 대화</button></div>
           <div className="room-list">
             {rooms.length === 0 && <p className="disclaimer">저장된 대화가 없습니다.</p>}
@@ -388,7 +389,6 @@ export default function Assistant() {
             <label htmlFor="auction-image">이미지 첨부 · 최대 8MB</label>
             <input id="auction-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setImage(event.target.files?.[0] ?? null)} />
           </div>
-          {savedCharacter && <CharacterCard character={savedCharacter} />}
           {image && <p className="disclaimer">첨부: {image.name} <button className="inline-button" type="button" onClick={() => setImage(null)}>삭제</button></p>}
         </aside>
 

@@ -151,7 +151,7 @@ p { color: var(--body); font-size: 16px; line-height: 1.65; }
   .chat-form { grid-template-columns: 1fr; }
 }
 
-.saved-character { margin-top: 28px; padding: 20px; border: 1px solid #39332c; border-radius: 16px; background: linear-gradient(145deg, #201b17, #111 65%); font-family: var(--display); }
+.saved-character { margin-bottom: 28px; padding: 20px; border: 1px solid #39332c; border-radius: 16px; background: linear-gradient(145deg, #201b17, #111 65%); font-family: var(--display); }
 .saved-character-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .saved-character-heading > span:last-child { color: #b6a18e; font-size: 11px; }
 .saved-character-hero { display: flex; align-items: center; gap: 16px; margin: 17px 0; }
