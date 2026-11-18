@@ -1,7 +1,7 @@
 import { withSupabase } from "@supabase/server";
 import { ChatOpenAI } from "@langchain/openai";
 import { createAgent, HumanMessage } from "langchain";
-import { buildMapleTools, searchGuideDocuments, type GuideDocument } from "../_shared/maple-tools.ts";
+import { buildMapleTools, searchGuideDocuments, getOcid, nexonGet, latestAvailableDate, type GuideDocument } from "../_shared/maple-tools.ts";
 import { createMapleGuardrail } from "../_shared/security.ts";
 
 const featureNames = [
@@ -75,6 +75,62 @@ function profileFromMessages(messages: any[]): Record<string, unknown> | undefin
       if (profile) return profile;
     }
   }
+}
+
+// Preserve raw responses so future features can use every returned equipment option.
+async function saveCharacterSnapshot(name: string, userId: string, apiKey: string, db: any) {
+  const { ocid } = await getOcid(name, apiKey);
+  const date = latestAvailableDate();
+  const endpoints = [
+    "character/basic", "character/stat", "character/hyper-stat", "character/propensity",
+    "character/ability", "character/item-equipment", "character/cashitem-equipment",
+    "character/symbol-equipment", "character/set-effect", "character/beauty-equipment",
+    "character/android-equipment", "character/pet-equipment", "character/hexamatrix",
+    "character/hexamatrix-stat", "character/dojang", "user/union", "user/union-raider",
+    "user/union-artifact", "user/union-champion", "character/link-skill",
+    ...["0", "1", "1.5", "2", "2.5", "3", "4", "5", "6", "hyperpassive", "hyperactive"].map((grade) => `character/skill?character_skill_grade=${grade}`),
+  ];
+  const responses: Record<string, unknown> = {};
+  const failures: Record<string, string> = {};
+  // Bound concurrent calls to avoid overwhelming the Nexon API.
+  let next = 0;
+  await Promise.all(Array.from({ length: 4 }, async () => {
+    while (next < endpoints.length) {
+      const endpoint = endpoints[next++];
+      const [path, query] = endpoint.split("?");
+      const params: Record<string, string> = { ocid, date };
+      if (query) for (const [key, value] of new URLSearchParams(query)) params[key] = value;
+      try { responses[endpoint] = await nexonGet(path, params, apiKey); }
+      catch (error) { failures[endpoint] = error instanceof Error ? error.message : "조회 실패"; }
+    }
+  }));
+  const basic = responses["character/basic"] as Record<string, any> | undefined;
+  if (!basic?.character_name) throw new Error("캐릭터 기본 정보를 가져오지 못했습니다.");
+  const stats = responses["character/stat"] as { final_stat?: Array<{ stat_name: string; stat_value: string }> } | undefined;
+  const stat = (key: string) => stats?.final_stat?.find((item) => item.stat_name === key)?.stat_value ?? null;
+  const union = responses["user/union"] as Record<string, any> | undefined;
+  const artifact = responses["user/union-artifact"] as Record<string, any> | undefined;
+  const dojang = responses["character/dojang"] as Record<string, any> | undefined;
+  const snapshot = await db.from("maple_character_snapshots").insert({
+    user_id: userId, ocid, character_name: basic.character_name, data_date: date,
+    responses, failures,
+  });
+  if (snapshot.error) throw new Error("캐릭터 데이터 저장에 실패했습니다.");
+  const profile = {
+    user_id: userId, character_name: basic.character_name, world_name: basic.world_name ?? null,
+    character_class: basic.character_class ?? null, character_level: basic.character_level ?? null,
+    character_exp_rate: basic.character_exp_rate ?? null, character_guild_name: basic.character_guild_name ?? null,
+    character_image: basic.character_image ?? null, combat_power: stat("전투력"),
+    boss_damage: stat("보스 몬스터 데미지"), ignore_defense: stat("방어율 무시"),
+    main_stats: Object.fromEntries(["STR", "DEX", "INT", "LUK"].map((key) => [key, stat(key)])),
+    union_level: union?.union_level ?? null, union_grade: union?.union_grade ?? null,
+    union_artifact_level: artifact?.union_artifact_level ?? null,
+    dojang_best_floor: dojang?.dojang_best_floor ?? null, dojang_best_time: dojang?.dojang_best_time ?? null,
+    data_date: date, synced_at: new Date().toISOString(),
+  };
+  const saved = await db.from("maple_user_representative_characters").upsert(profile, { onConflict: "user_id" });
+  if (saved.error) throw new Error("최근 캐릭터 저장에 실패했습니다.");
+  return { profile, partial: ["character/stat", "character/item-equipment"].some((key) => Boolean(failures[key])) };
 }
 
 function sourcesFromMessages(messages: any[]): Array<Record<string, unknown>> {
@@ -169,6 +225,7 @@ export default {
       }
     }
 
+    const lookedUpCharacters: string[] = [];
     const toolsByName = buildMapleTools({
       nexonKey,
       openAiKey,
@@ -176,6 +233,7 @@ export default {
       supabaseAdmin: context.supabaseAdmin,
       imageAttached: Boolean(imageUrl),
       searchContext: retrievalQuery,
+      onCharacterLookup: (name) => { lookedUpCharacters.push(name); },
     });
     const selectedTools = feature === "auto"
       ? Object.values(toolsByName)
@@ -232,6 +290,15 @@ export default {
               }
             }
             const output = await run.output;
+            for (const name of lookedUpCharacters.filter((name, index) => lookedUpCharacters.lastIndexOf(name) === index)) {
+              try {
+                const result = await saveCharacterSnapshot(name, userId, nexonKey, context.supabaseAdmin);
+                send("saved_character", result);
+              } catch (error) {
+                console.error("Character snapshot failed:", error instanceof Error ? error.message : "unknown error");
+                send("character_save_error", { message: "캐릭터 정보를 저장하지 못했습니다. 잠시 후 다시 조회해 주세요." });
+              }
+            }
             const profile = profileFromMessages(output.messages ?? []);
             if (profile) send("character", { profile });
             const citations = [

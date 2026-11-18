@@ -63,6 +63,8 @@ export type ToolContext = {
   supabaseAdmin: any;
   imageAttached: boolean;
   searchContext?: string;
+  ocidCache?: Map<string, string>;
+  onCharacterLookup?: (name: string) => void;
 };
 
 export type GuideDocument = {
@@ -79,12 +81,12 @@ export type NoticeDocument = GuideDocument & {
   notice_date: string;
 };
 
-function latestAvailableDate() {
+export function latestAvailableDate() {
   const kstToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
   return new Date(Date.parse(`${kstToday}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 }
 
-async function nexonGet(path: string, params: Record<string, string>, apiKey: string) {
+export async function nexonGet(path: string, params: Record<string, string>, apiKey: string) {
   if (!apiKey) throw new Error("서버에 NEXON_API_KEY가 설정되지 않았습니다.");
   const url = new URL(`${API_BASE}/${path.replace(/^\//, "")}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
@@ -104,7 +106,7 @@ async function nexonGet(path: string, params: Record<string, string>, apiKey: st
   return payload;
 }
 
-async function getOcid(characterName: string, apiKey: string) {
+export async function getOcid(characterName: string, apiKey: string) {
   const name = characterName.trim();
   if (!name) throw new Error("캐릭터 이름을 입력해 주세요.");
   const result = await nexonGet("id", { character_name: name }, apiKey);
@@ -112,15 +114,20 @@ async function getOcid(characterName: string, apiKey: string) {
   return { character_name: name, ocid: result.ocid as string };
 }
 
-async function getCharacterData(characterName: string, endpoint: string, apiKey: string) {
-  const identity = await getOcid(characterName, apiKey);
-  const data = await nexonGet(endpoint, { ocid: identity.ocid, date: latestAvailableDate() }, apiKey);
+function rememberOcid(context: ToolContext, characterName: string, ocid: string) {
+  context.ocidCache?.set(characterName.trim().toLowerCase(), ocid);
+}
+
+async function getCharacterData(characterName: string, endpoint: string, context: ToolContext) {
+  const identity = await getOcid(characterName, context.nexonKey);
+  rememberOcid(context, characterName, identity.ocid);
+  const data = await nexonGet(endpoint, { ocid: identity.ocid, date: latestAvailableDate() }, context.nexonKey);
   return { identity, data };
 }
 
-async function getProfile(characterName: string, apiKey: string) {
+async function getProfile(characterName: string, context: ToolContext) {
   try {
-    const { data } = await getCharacterData(characterName, "character/basic", apiKey);
+    const { data } = await getCharacterData(characterName, "character/basic", context);
     return {
       character_name: data.character_name ?? characterName,
       character_level: data.character_level,
@@ -142,50 +149,57 @@ function asJson(data: unknown) {
 export function buildMapleTools(context: ToolContext) {
   const apiTool = (name: string, description: string, fn: (input: any) => Promise<unknown>, schema: any) =>
     tool(async (input: any) => {
-      try { return asJson(await fn(input)); }
+      try {
+        const result = await fn(input);
+        if (input.character_name) context.onCharacterLookup?.(input.character_name);
+        return asJson(result);
+      }
       catch (error) { return `조회 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`; }
     }, { name, description, schema });
 
   const characterSchema = z.object({ character_name: z.string().min(1).max(20) });
   const ocid = apiTool("get_character_ocid", "캐릭터 닉네임으로 OCID를 조회합니다.", async ({ character_name }) => {
     const identity = await getOcid(character_name, context.nexonKey);
-    return { ...identity, character: await getProfile(character_name, context.nexonKey) };
+    rememberOcid(context, character_name, identity.ocid);
+    return { ...identity, character: await getProfile(character_name, context) };
   }, characterSchema);
 
   const basic = apiTool("get_character_basic", "레벨, 직업, 월드, 길드 등 기본 정보와 캐릭터 이미지를 조회합니다.", async ({ character_name }) => {
-    const { data } = await getCharacterData(character_name, "character/basic", context.nexonKey);
+    const { data } = await getCharacterData(character_name, "character/basic", context);
     return data;
   }, characterSchema);
 
   const stats = apiTool("get_character_stats", "주스탯, 전투력, 보스 데미지, 방어율 무시 등 능력치를 조회합니다.", async ({ character_name }) => {
     const [{ data }, character] = await Promise.all([
-      getCharacterData(character_name, "character/stat", context.nexonKey),
-      getProfile(character_name, context.nexonKey),
+      getCharacterData(character_name, "character/stat", context),
+      getProfile(character_name, context),
     ]);
     return { character, stats: data };
   }, characterSchema);
 
   const equipment = apiTool("get_character_equipment", "장착 장비, 스타포스, 잠재능력을 조회합니다.", async ({ character_name }) => {
     const [{ data }, character] = await Promise.all([
-      getCharacterData(character_name, "character/item-equipment", context.nexonKey),
-      getProfile(character_name, context.nexonKey),
+      getCharacterData(character_name, "character/item-equipment", context),
+      getProfile(character_name, context),
     ]);
     return { character, equipment: data };
   }, characterSchema);
 
   const hexa = apiTool("get_character_hexa", "HEXA 코어와 HEXA 스탯 설정을 조회합니다.", async ({ character_name }) => {
     const identity = await getOcid(character_name, context.nexonKey);
+    rememberOcid(context, character_name, identity.ocid);
     const params = { ocid: identity.ocid, date: latestAvailableDate() };
     const [matrix, stat, character] = await Promise.all([
       nexonGet("character/hexamatrix", params, context.nexonKey),
       nexonGet("character/hexamatrix-stat", params, context.nexonKey),
-      getProfile(character_name, context.nexonKey),
+      getProfile(character_name, context),
     ]);
     return { character, hexa_matrix: matrix, hexa_stat: stat };
   }, characterSchema);
 
   const spec = apiTool("analyze_character_spec", "기본 정보, 능력치, 장비, HEXA 데이터를 함께 조회해 종합 분석합니다.", async ({ character_name }) => {
     const identity = await getOcid(character_name, context.nexonKey);
+    rememberOcid(context, character_name, identity.ocid);
     const params = { ocid: identity.ocid, date: latestAvailableDate() };
     const [profile, stat, items, matrix, hexaStat] = await Promise.all([
       nexonGet("character/basic", params, context.nexonKey),
@@ -199,9 +213,9 @@ export function buildMapleTools(context: ToolContext) {
 
   const upgrade = apiTool("recommend_spec_upgrade", "현재 장비와 입력 메소 예산을 바탕으로 스펙업 점검 후보를 추천합니다. 실시간 시세는 제공하지 않습니다.", async ({ character_name, budget_meso }) => {
     const [{ data: itemData }, { data: statData }, character] = await Promise.all([
-      getCharacterData(character_name, "character/item-equipment", context.nexonKey),
-      getCharacterData(character_name, "character/stat", context.nexonKey),
-      getProfile(character_name, context.nexonKey),
+      getCharacterData(character_name, "character/item-equipment", context),
+      getCharacterData(character_name, "character/stat", context),
+      getProfile(character_name, context),
     ]);
     const items = itemData.item_equipment ?? [];
     return {
@@ -218,8 +232,8 @@ export function buildMapleTools(context: ToolContext) {
 
   const boss = apiTool("estimate_boss_clear", "보스명, 파티 인원, 캐릭터 스펙을 기반으로 참고용 분석을 합니다. 공식 계산기가 아닙니다.", async ({ character_name, boss_name, party_size }) => {
     const [{ data: basicData }, { data: statsData }] = await Promise.all([
-      getCharacterData(character_name, "character/basic", context.nexonKey),
-      getCharacterData(character_name, "character/stat", context.nexonKey),
+      getCharacterData(character_name, "character/basic", context),
+      getCharacterData(character_name, "character/stat", context),
     ]);
     return {
       boss_name, party_size,

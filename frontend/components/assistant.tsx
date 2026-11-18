@@ -18,16 +18,25 @@ type ChatMessage = {
 };
 type ChatRoom = { id: string; title: string; created_at: string; updated_at: string };
 type CharacterProfile = { image?: string; name?: string; level?: number | string; job?: string; world?: string };
+type SavedCharacter = {
+  character_name: string; world_name: string | null; character_class: string | null;
+  character_level: number | null; character_exp_rate: string | null; character_guild_name: string | null;
+  character_image: string | null; combat_power: string | null; boss_damage: string | null;
+  ignore_defense: string | null; union_level: number | null; union_artifact_level: number | null;
+  dojang_best_floor: number | null; data_date: string | null;
+};
 type StreamEvent = {
   type?: string;
   text?: string;
   message?: string;
   profile?: CharacterProfile;
   sources?: Citation[];
+  partial?: boolean;
 };
 
 export default function Assistant() {
   const router = useRouter();
+  const [savedCharacter, setSavedCharacter] = useState<SavedCharacter | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null);
@@ -84,6 +93,10 @@ export default function Assistant() {
       }
       setUser(currentUser);
       setAccessToken(token);
+      const { data: character } = await authenticatedClient.from("maple_user_representative_characters")
+        .select("character_name, world_name, character_class, character_level, character_exp_rate, character_guild_name, character_image, combat_power, boss_damage, ignore_defense, union_level, union_artifact_level, dojang_best_floor, data_date")
+        .eq("user_id", currentUser.id).maybeSingle();
+      if (active && character) setSavedCharacter(character as SavedCharacter);
       try {
         const { data, error: roomError } = await authenticatedClient
           .from("maple_chat_rooms")
@@ -298,6 +311,11 @@ export default function Assistant() {
             ? { ...item, content: item.content + event.text }
             : item,
         ));
+      } else if (eventType === "saved_character" && event.profile) {
+        setSavedCharacter(event.profile as unknown as SavedCharacter);
+        if (event.partial) setError("일부 캐릭터 정보는 넥슨 API에서 제공받지 못해 저장된 항목만 표시합니다.");
+      } else if (eventType === "character_save_error") {
+        setError(event.message ?? "캐릭터 정보를 저장하지 못했습니다.");
       } else if (eventType === "character" && event.profile) {
         setMessages((previous) => previous.map((item, index) =>
           index === previous.length - 1 && item.role === "assistant"
@@ -370,6 +388,7 @@ export default function Assistant() {
             <label htmlFor="auction-image">이미지 첨부 · 최대 8MB</label>
             <input id="auction-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setImage(event.target.files?.[0] ?? null)} />
           </div>
+          {savedCharacter && <CharacterCard character={savedCharacter} />}
           {image && <p className="disclaimer">첨부: {image.name} <button className="inline-button" type="button" onClick={() => setImage(null)}>삭제</button></p>}
         </aside>
 
@@ -423,4 +442,32 @@ async function readImage(file: File): Promise<{ mimeType: string; base64: string
     reader.readAsDataURL(file);
   });
   return { mimeType: file.type, base64: dataUrl.split(",", 2)[1] ?? "" };
+}
+
+function CharacterCard({ character }: { character: SavedCharacter }) {
+  const fields = [
+    ["직업", character.character_class],
+    ["레벨", character.character_level != null ? `Lv.${character.character_level}${character.character_exp_rate ? ` (${character.character_exp_rate}%)` : ""}` : null],
+    ["길드", character.character_guild_name],
+    ["유니온", character.union_level != null ? character.union_level.toLocaleString("ko-KR") : null],
+    ["아티팩트", character.union_artifact_level != null ? `Lv.${character.union_artifact_level}` : null],
+    ["무릉도장", character.dojang_best_floor != null ? `${character.dojang_best_floor}층` : null],
+    ["보스 데미지", character.boss_damage != null ? `${character.boss_damage}%` : null],
+    ["방어율 무시", character.ignore_defense != null ? `${character.ignore_defense}%` : null],
+  ];
+  return <section className="saved-character" aria-label="최근 조회한 캐릭터">
+    <div className="saved-character-heading"><span className="eyebrow">LAST CHARACTER</span><span>최근 조회</span></div>
+    <div className="saved-character-hero">
+      <div className="saved-character-image">{character.character_image && <img src={character.character_image} alt={`${character.character_name} 캐릭터`} />}</div>
+      <div className="saved-character-identity"><span className="saved-character-world">{character.world_name ?? "월드 미확인"}</span><h3>{character.character_name}</h3><span>{character.character_class ?? "직업 미확인"}</span></div>
+    </div>
+    <div className="saved-character-power"><span>전투력</span><strong>{character.combat_power ? formatPower(character.combat_power) : "정보 없음"}</strong></div>
+    <dl className="saved-character-stats">{fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value ?? "—"}</dd></div>)}</dl>
+    <p className="saved-character-date">넥슨 데이터 기준 {character.data_date ?? "날짜 미확인"}</p>
+  </section>;
+}
+
+function formatPower(value: string) {
+  const parsed = Number(value.replaceAll(",", ""));
+  return Number.isFinite(parsed) ? parsed.toLocaleString("ko-KR") : value;
 }
