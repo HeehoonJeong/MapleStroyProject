@@ -1,0 +1,37 @@
+name: Sync MapleStory official notices
+
+on:
+  schedule:
+    # 10:17 Asia/Seoul (GitHub Actions cron uses UTC).
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required repository secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          NOTICE_SYNC_SECRET: ${{ secrets.NOTICE_SYNC_SECRET }}
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_PUBLISHABLE_KEY"
+          test -n "$NOTICE_SYNC_SECRET"
+
+      - name: Sync official notices into Supabase Vector DB
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          NOTICE_SYNC_SECRET: ${{ secrets.NOTICE_SYNC_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error --retry 2 --max-time 180 \
+            -X POST "$SUPABASE_URL/functions/v1/sync-maple-notices" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            -H "x-sync-secret: $NOTICE_SYNC_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{"source":"github-actions"}'

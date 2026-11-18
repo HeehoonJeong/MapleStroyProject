@@ -8,7 +8,8 @@ export type FeatureId =
   | "recommend_spec_upgrade"
   | "estimate_boss_clear"
   | "analyze_auction_screenshot"
-  | "search_maple_guide";
+  | "search_maple_guide"
+  | "search_maple_notices";
 
 export type Feature = {
   id: FeatureId;
@@ -110,5 +111,14 @@ export const features: Feature[] = [
     description: "저장된 공략 문서를 의미 기반 검색하고 관련 문단과 출처를 답변에 제공합니다.",
     example: "아케인 심볼 강화 정보를 찾아줘",
     note: "dataset/ 문서를 Supabase에 임베딩 적재한 뒤 검색할 수 있습니다.",
+  },
+  {
+    id: "search_maple_notices",
+    number: "11",
+    title: "넥슨 공식 공지 검색",
+    summary: "공지·업데이트·이벤트·캐시샵 공지를 의미 검색합니다.",
+    description: "NEXON Open API에서 공지 목록과 본문을 가져와 Supabase Vector DB에 누적합니다. 관련 질문에는 공지 제목, 날짜, 원문 링크를 함께 제시합니다.",
+    example: "최근 점검 보상과 일정을 안내한 공식 공지를 찾아줘",
+    note: "최신 공지를 반영하려면 관리자 동기화 작업을 실행하거나 주기 실행을 설정해야 합니다.",
   },
 ];

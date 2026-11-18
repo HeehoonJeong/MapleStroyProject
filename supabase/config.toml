@@ -20,3 +20,6 @@ email_optional = false
 
 [functions.maple-agent]
 verify_jwt = true
+
+[functions.sync-maple-notices]
+verify_jwt = false

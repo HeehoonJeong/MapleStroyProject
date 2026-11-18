@@ -20,6 +20,12 @@ export type GuideDocument = {
   similarity: number;
 };
 
+export type NoticeDocument = GuideDocument & {
+  notice_type: string;
+  notice_id: number;
+  notice_date: string;
+};
+
 function latestAvailableDate() {
   const kstToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
   return new Date(Date.parse(`${kstToday}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
@@ -189,6 +195,22 @@ export function buildMapleTools(context: ToolContext) {
     schema: z.object({ query: z.string().min(2).max(500) }),
   });
 
+  const notices = tool(async ({ query, notice_type }) => {
+    try {
+      const results = await searchMapleNotices(query, context, notice_type);
+      return results.length ? JSON.stringify(results) : "관련된 공식 메이플스토리 공지를 찾지 못했습니다.";
+    } catch (error) {
+      return `공지 검색 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`;
+    }
+  }, {
+    name: "search_maple_notices",
+    description: "Supabase Vector DB에 저장된 넥슨 공식 공지사항, 업데이트, 이벤트, 캐시샵 공지를 검색하고 출처를 제공합니다.",
+    schema: z.object({
+      query: z.string().min(2).max(500),
+      notice_type: z.enum(["all", "notice", "update", "event", "cashshop"]).default("all"),
+    }),
+  });
+
   return {
     get_character_ocid: ocid,
     get_character_basic: basic,
@@ -200,12 +222,39 @@ export function buildMapleTools(context: ToolContext) {
     estimate_boss_clear: boss,
     analyze_auction_screenshot: screenshot,
     search_maple_guide: guide,
+    search_maple_notices: notices,
   };
 }
 
 async function searchGuide(query: string, context: ToolContext) {
   const data = await searchGuideDocuments(query, context);
   return data.length ? JSON.stringify(data) : "관련 공략 문서를 찾지 못했습니다.";
+}
+
+async function searchMapleNotices(
+  query: string,
+  context: ToolContext,
+  noticeType: "all" | "notice" | "update" | "event" | "cashshop",
+): Promise<NoticeDocument[]> {
+  if (!context.upstageKey) throw new Error("서버에 UPSTAGE_API_KEY가 설정되지 않았습니다.");
+  const response = await fetch("https://api.upstage.ai/v1/embeddings", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${context.upstageKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "solar-embedding-2-query", input: query }),
+  });
+  if (!response.ok) throw new Error("공지 검색용 임베딩 생성에 실패했습니다.");
+  const payload = await response.json();
+  const queryEmbedding = payload?.data?.[0]?.embedding;
+  if (!Array.isArray(queryEmbedding)) throw new Error("임베딩 응답 형식이 올바르지 않습니다.");
+
+  const { data, error } = await context.supabaseAdmin.rpc("match_maple_notice_chunks_upstage", {
+    query_embedding: queryEmbedding,
+    match_count: 6,
+    match_threshold: 0.3,
+    filter_notice_type: noticeType === "all" ? null : noticeType,
+  });
+  if (error) throw new Error("Supabase 공지 Vector DB를 조회하지 못했습니다.");
+  return (data ?? []) as NoticeDocument[];
 }
 
 export async function searchGuideDocuments(
