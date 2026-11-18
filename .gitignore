@@ -18,3 +18,6 @@ frontend/.env.*.local
 supabase/.temp/
 supabase/.env
 supabase/functions.env
+
+# Local hunting prototype database
+frontend/.local/

@@ -7,6 +7,7 @@ import type { User } from "@supabase/supabase-js";
 import { features, type FeatureId } from "@/lib/features";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import Notices from "@/components/notices";
+import Hunting from "@/components/hunting";
 
 type Citation = { title: string; source: string; url?: string | null };
 type ChatMessage = {
@@ -38,7 +39,7 @@ type StreamEvent = {
 export default function Assistant() {
   const router = useRouter();
   const [savedCharacter, setSavedCharacter] = useState<SavedCharacter | null>(null);
-  const [view, setView] = useState<"chat" | "notices">("chat");
+  const [view, setView] = useState<"chat" | "notices" | "hunting">("chat");
   const [user, setUser] = useState<User | null>(null);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null);
@@ -363,7 +364,7 @@ export default function Assistant() {
       <div className="assistant-layout">
         <aside className="tool-panel">
           {savedCharacter && <CharacterCard character={savedCharacter} />}
-          <nav className="section-nav" aria-label="서비스 메뉴"><button type="button" className={view === "chat" ? "active" : ""} aria-current={view === "chat" ? "page" : undefined} onClick={() => setView("chat")}>대화 <span>↗</span></button><button type="button" className={view === "notices" ? "active" : ""} aria-current={view === "notices" ? "page" : undefined} onClick={() => setView("notices")}>공지사항 <span>↗</span></button></nav>
+          <nav className="section-nav" aria-label="서비스 메뉴"><button type="button" className={view === "chat" ? "active" : ""} aria-current={view === "chat" ? "page" : undefined} onClick={() => setView("chat")}>대화 <span>↗</span></button><button type="button" className={view === "notices" ? "active" : ""} aria-current={view === "notices" ? "page" : undefined} onClick={() => setView("notices")}>공지사항 <span>↗</span></button><button type="button" className={view === "hunting" ? "active" : ""} aria-current={view === "hunting" ? "page" : undefined} onClick={() => setView("hunting")}>사냥터 <span>↗</span></button></nav>
           <div className="room-heading"><span className="eyebrow">YOUR CHATS</span><button className="text-button compact-button" type="button" disabled={busy} onClick={() => { setView("chat"); setSelectedRoom(null); setMessages([]); setError(""); }}>+ 새 대화</button></div>
           <div className="room-list">
             {rooms.length === 0 && <p className="disclaimer">저장된 대화가 없습니다.</p>}
@@ -397,6 +398,7 @@ export default function Assistant() {
         </aside>
 
         {view === "notices" && ready && <Notices />}
+        {view === "hunting" && ready && <Hunting />}
         <section hidden={view !== "chat"} className="chat-panel" aria-label="메이플스토리 AI 채팅">
           <div className="status-text" aria-live="polite">{status}</div>
           <div className="chat-log" ref={logRef}>
