@@ -2,8 +2,9 @@ import { withSupabase } from "@supabase/server";
 
 const NEXON_BASE = "https://open.api.nexon.com/maplestory/v1";
 const UPSTAGE_EMBEDDINGS_URL = "https://api.upstage.ai/v1/embeddings";
-const EMBEDDING_BATCH_SIZE = 32;
+const EMBEDDING_BATCH_SIZE = 8;
 const MAX_NOTICES_PER_CATEGORY = 100;
+const MAX_EMBEDDING_RETRIES = 5;
 
 type NoticeType = "notice" | "update" | "event" | "cashshop";
 type NoticeCategory = {
@@ -114,14 +115,27 @@ async function embedPassages(texts: string[], apiKey: string): Promise<number[][
   const vectors: number[][] = [];
   for (let start = 0; start < texts.length; start += EMBEDDING_BATCH_SIZE) {
     const batch = texts.slice(start, start + EMBEDDING_BATCH_SIZE);
-    const response = await fetch(UPSTAGE_EMBEDDINGS_URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "solar-embedding-2-passage", input: batch }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(`Upstage embeddings HTTP ${response.status}`);
+    let response: Response | undefined;
+    let payload: any;
+    for (let attempt = 0; attempt < MAX_EMBEDDING_RETRIES; attempt++) {
+      response = await fetch(UPSTAGE_EMBEDDINGS_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "solar-embedding-2-passage", input: batch }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      payload = await response.json().catch(() => ({}));
+      if (response.status !== 429) break;
+      if (attempt === MAX_EMBEDDING_RETRIES - 1) {
+        throw new Error("Upstage embedding rate limit이 반복되어 동기화를 중단했습니다.");
+      }
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 20_000)
+        : Math.min(1000 * (2 ** attempt), 16_000);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+    if (!response?.ok) throw new Error(`Upstage embeddings HTTP ${response?.status ?? "unknown"}`);
     const rows = Array.isArray(payload?.data) ? [...payload.data].sort((a: any, b: any) => Number(a.index) - Number(b.index)) : [];
     if (rows.length !== batch.length || rows.some((row: any) => !Array.isArray(row.embedding) || row.embedding.length !== 1024)) {
       throw new Error("Upstage 임베딩 응답의 개수 또는 차원이 맞지 않습니다.");

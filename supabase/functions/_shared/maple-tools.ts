@@ -249,12 +249,29 @@ async function searchMapleNotices(
 
   const { data, error } = await context.supabaseAdmin.rpc("match_maple_notice_chunks_upstage", {
     query_embedding: queryEmbedding,
-    match_count: 6,
+    match_count: 10,
     match_threshold: 0.3,
     filter_notice_type: noticeType === "all" ? null : noticeType,
   });
   if (error) throw new Error("Supabase 공지 Vector DB를 조회하지 못했습니다.");
-  return (data ?? []) as NoticeDocument[];
+  const byNotice = new Map<string, NoticeDocument>();
+  const chunkCounts = new Map<string, number>();
+  for (const row of (data ?? []) as NoticeDocument[]) {
+    const key = `${row.notice_type}:${row.notice_id}`;
+    const existing = byNotice.get(key);
+    if (!existing) {
+      byNotice.set(key, { ...row });
+      chunkCounts.set(key, 1);
+      continue;
+    }
+    const count = chunkCounts.get(key) ?? 1;
+    if (count < 2 && row.content && !existing.content.includes(row.content)) {
+      existing.content = `${existing.content}\n\n${row.content}`;
+      chunkCounts.set(key, count + 1);
+    }
+    existing.similarity = Math.max(existing.similarity, row.similarity);
+  }
+  return [...byNotice.values()].sort((a, b) => b.similarity - a.similarity).slice(0, 6);
 }
 
 export async function searchGuideDocuments(
