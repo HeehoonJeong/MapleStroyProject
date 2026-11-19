@@ -355,8 +355,8 @@ export default function Assistant() {
       <header className="assistant-header">
         <div>
           <p className="eyebrow">MAPLESTORY KNOWLEDGE · RAG CHAT</p>
-          <h1>무엇이 궁금하세요?</h1>
-          <p>공식 공지와 문서를 검색해 답하고, 참고한 출처를 함께 보여드립니다.</p>
+          <h1>Play smarter,<br />Maple better.</h1>
+          <p>캐릭터와 사냥터, 공지까지. 메이플에 필요한 정보를 더 빠르게.</p>
         </div>
         <img className="assistant-art" src="/assets/maple-battle.png" alt="메이플스토리 전투 장면" />
       </header>
