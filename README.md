@@ -147,3 +147,11 @@ curl --fail-with-body -X POST "$SUPABASE_URL/functions/v1/sync-maple-notices" \
 게스트 기능을 배포하기 전에 `202611190002_guest_access.sql` 마이그레이션을 적용하고 `maple-agent`와 `maple-guest` 함수를 배포해야 합니다. Supabase 함수 비밀값에 예측하기 어려운 무작위 `GUEST_RATE_SALT`를 설정하세요. 선택적으로 `GUEST_PER_MINUTE`(기본 4), `GUEST_DAILY_TOTAL`(전체 게스트 합계 기본 500), `GUEST_CONCURRENT`(IP당 기본 2)를 설정할 수 있습니다. 요청 제한은 데이터베이스에서 공유하며 원본 IP가 아닌 salt가 적용된 해시를 저장합니다. `cf-connecting-ip`가 없는 환경에서는 게스트 호출이 차단되므로 실제 배포 게이트웨이에서 헤더 전달을 검증해야 합니다. 이 설정은 계정 대화의 RLS 정책을 변경하지 않습니다.
 
 랜딩 영상 원본 사본은 배포 대상에서 제외된 `media/original/`에 보관하고, 웹에는 오디오를 제거한 H.264 파일과 WebP 포스터를 사용합니다.
+
+### 질문 도구 활성화와 사용자 피드백
+
+`frontend/lib/feature-flags.ts`의 `estimate_boss_clear`, `analyze_auction_screenshot`을 `false`로 두면 두 기능이 드롭다운과 자동 Tool Calling에서 제외되며 직접 호출도 거부됩니다. `true`로 바꾼 뒤 프런트엔드와 `maple-agent`, `maple-guest` 함수를 모두 다시 빌드·배포하면 복구됩니다. 내부 도구 ID와 기존 대화 기록은 유지됩니다.
+
+`202611190003_user_feedback.sql`은 `maple_user_feedback` 및 비공개 요청 제한 테이블을 생성합니다. 별도 관리자 화면 없이 Supabase Dashboard의 Table Editor에서 피드백을 열람하고 `status`(pending, reviewing, planned, resolved, dismissed)와 `developer_note`를 관리할 수 있습니다. 일반 사용자는 테이블을 조회하거나 수정할 수 없고, `submit-feedback` Edge Function으로 제출만 할 수 있습니다. 함수는 기존 `GUEST_RATE_SALT` 서버 비밀값과 신뢰할 수 있는 `cf-connecting-ip` 헤더가 필요합니다. 요청 제한은 IP별 시간당 5건, 전체 하루 300건, 동일 내용 10분 중복 방지이며 salt가 적용된 해시는 피드백과 분리된 임시 테이블에 보관하고 24시간을 지난 항목은 다음 제출 시 삭제합니다. 자동화 방지용 숨김 필드가 있지만 CAPTCHA 수준의 차단은 제공하지 않습니다. 함수는 AI나 넥슨 API를 호출하지 않습니다.
+
+데이터베이스 마이그레이션을 적용한 뒤 `submit-feedback` 함수를 JWT 게이트웨이 검증 없이 배포해야 게스트도 제출할 수 있습니다. 함수는 로그인 토큰이 전달된 경우 이를 서버에서 검증해 사용자 ID를 설정합니다. 민감한 키는 서버에만 둡니다.

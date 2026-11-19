@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.maple-guest]
 verify_jwt = false
+
+[functions.submit-feedback]
+verify_jwt = false

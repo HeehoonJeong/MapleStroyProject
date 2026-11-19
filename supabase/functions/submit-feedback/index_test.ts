@@ -1,0 +1,11 @@
+import {handleFeedback} from "./index.ts";
+import {isToolEnabled} from "../../../frontend/lib/feature-flags.ts";
+Deno.env.set('GUEST_RATE_SALT','test-only-salt');
+let captured:Record<string,unknown>={};let result='saved';
+const context={supabaseAdmin:{auth:{getUser:(token:string)=>Promise.resolve(token==='valid'?{data:{user:{id:'member-1'}},error:null}:{data:{user:null},error:{}})},rpc:(_name:string,args:Record<string,unknown>)=>{captured=args;return Promise.resolve({data:result,error:null});}}};
+const run=(body:unknown,token?:string)=>handleFeedback(new Request('https://example.test',{method:'POST',headers:{'cf-connecting-ip':'127.0.0.2',...(token?{authorization:`Bearer ${token}`}:{})},body:JSON.stringify(body)}),context);
+const valid={content:'테스트 의견',website:'',category:'기타',title:'제목',page_path:'/assistant'};
+Deno.test('guest and member identity verified server side',async()=>{let r=await run(valid);if(r.status!==201||captured.p_user_id!==null)throw Error('guest');r=await run(valid,'valid');if(r.status!==201||captured.p_user_id!=='member-1')throw Error('member');if((await run(valid,'fake')).status!==401)throw Error('fake');});
+Deno.test('invalid input and injected columns rejected',async()=>{for(const bad of [{...valid,content:'  '},{...valid,status:'resolved'},{...valid,website:'spam'},{...valid,page_path:'/assistant?x=1'},{...valid,content:'x'.repeat(3001)}])if((await run(bad)).status!==400)throw Error('invalid');});
+Deno.test('rate and duplicate handled without false success',async()=>{for(const v of ['limited','duplicate']){result=v;if((await run(valid)).status!==429)throw Error(v)}result='saved';});
+Deno.test('feature flags off',()=>{if(isToolEnabled('estimate_boss_clear')||isToolEnabled('analyze_auction_screenshot')||!isToolEnabled('get_character_basic'))throw Error('feature');});

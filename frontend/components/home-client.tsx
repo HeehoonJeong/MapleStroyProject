@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import LandingVideo from "@/components/landing-video";
+import Feedback from "@/components/feedback";
 
 export default function HomeClient() {
   const [user, setUser] = useState<User | null>(null);
@@ -58,13 +59,15 @@ export default function HomeClient() {
     <main className="site-shell landing-shell">
       <nav className="topbar">
         <Link className="wordmark" href="/">MAPLE / AI</Link>
+        <div className="profile-actions"><Feedback />
         {user ? (
-          <div className="profile-actions">
+          <>
             {avatar && <img className="avatar" src={avatar} alt="프로필" referrerPolicy="no-referrer" />}
             <span className="profile-name">{displayName}</span>
             <button className="text-button compact-button" type="button" onClick={signOut}>로그아웃</button>
-          </div>
+          </>
         ) : <button className="text-button compact-button" type="button" onClick={signInWithGoogle} disabled={loading}>Google 로그인</button>}
+        </div>
       </nav>
 
       <section className="landing-hero">

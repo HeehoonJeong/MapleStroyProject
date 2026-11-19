@@ -1,3 +1,5 @@
+import { isToolEnabled } from "@/lib/feature-flags";
+
 export type FeatureId =
   | "get_character_ocid"
   | "get_character_basic"
@@ -24,7 +26,7 @@ export type Feature = {
   note: string;
 };
 
-export const features: Feature[] = [
+const allFeatures: Feature[] = [
   {
     id: "get_character_ocid",
     number: "01",
@@ -143,3 +145,5 @@ export const features: Feature[] = [
     example: "행운s와 아델의 능력치를 비교해줘", note: "캐릭터 이름 두 개가 필요합니다.",
   },
 ];
+
+export const features: Feature[] = allFeatures.filter(feature => isToolEnabled(feature.id)).map((feature, index) => ({ ...feature, number: String(index + 1).padStart(2, "0") }));

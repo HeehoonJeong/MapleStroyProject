@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import type { User } from "@supabase/supabase-js";
 import { features, type FeatureId } from "@/lib/features";
+import { isToolEnabled } from "@/lib/feature-flags";
+import Feedback from "@/components/feedback";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import Notices from "@/components/notices";
 import Hunting from "@/components/hunting";
@@ -365,7 +367,7 @@ export default function Assistant() {
     <main className="site-shell assistant-shell">
       <nav className="topbar">
         <Link className="wordmark" href="/">MAPLE / AI</Link>
-        <div className="profile-actions">
+        <div className="profile-actions"><Feedback />
           {avatar && <img className="avatar" src={avatar} alt="프로필" referrerPolicy="no-referrer" />}
           <span className={user ? "profile-name" : "guest-mode-label"}>{user ? displayName : "게스트"}</span>
           {user ? <button className="text-button compact-button" type="button" onClick={signOut}>로그아웃</button> : <button className="text-button compact-button" type="button" onClick={signIn} disabled={!ready}>Google 로그인</button>}
@@ -403,11 +405,11 @@ export default function Assistant() {
               <button className="text-button prompt-example" type="button" key={example} onClick={() => selectExample(example)}>{example}</button>
             ))}
           </div>
-          <div className="upload-row">
+          {isToolEnabled("analyze_auction_screenshot") && <div className="upload-row">
             <label htmlFor="auction-image">이미지 첨부 · 최대 8MB</label>
             <input id="auction-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setImage(event.target.files?.[0] ?? null)} />
-          </div>
-          {image && <p className="disclaimer">첨부: {image.name} <button className="inline-button" type="button" onClick={() => setImage(null)}>삭제</button></p>}
+          </div>}
+          {isToolEnabled("analyze_auction_screenshot") && image && <p className="disclaimer">첨부: {image.name} <button className="inline-button" type="button" onClick={() => setImage(null)}>삭제</button></p>}
         </aside>
 
         {view === "notices" && ready && <Notices />}

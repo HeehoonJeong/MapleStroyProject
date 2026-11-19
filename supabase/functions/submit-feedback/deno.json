@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "@supabase/server": "npm:@supabase/server@1",
+    "langchain": "npm:langchain@1",
+    "@langchain/openai": "npm:@langchain/openai@1",
+    "zod": "npm:zod@4"
+  }
+}
