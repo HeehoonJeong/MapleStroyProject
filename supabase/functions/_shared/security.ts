@@ -20,7 +20,7 @@ const injectionPatterns = [
 
 const mapleTerms = [
   "메이플", "maplestory", "maple story", "캐릭터", "ocid", "닉네임", "직업", "월드", "스펙", "능력치",
-  "주스탯", "전투력", "장비", "스타포스", "잠재", "보스", "사냥", "육성", "링크", "유니온", "헥사",
+  "주스탯", "전투력", "심볼", "장비", "스타포스", "잠재", "보스", "사냥", "육성", "링크", "유니온", "헥사",
   "hexa", "6차", "강화", "경매장", "메소", "길드", "공략", "아이템", "큐브", "스킬", "원킬",
   "아케인", "세르니움", "루시드", "윌", "세렌", "칼로스", "카링", "마일리지", "공지", "점검", "이벤트",
   "패치", "업데이트", "캐시샵", "공식 공지", "보상", "탐험 코인", "메이플크레딧", "boss", "meso", "starforce",
@@ -29,7 +29,7 @@ const mapleTerms = [
 
 const characterFeatures = new Set([
   "get_character_ocid", "get_character_basic", "get_character_stats", "get_character_equipment",
-  "get_character_hexa", "analyze_character_spec",
+  "get_character_hexa", "get_character_symbols", "get_character_union", "analyze_character_spec",
 ]);
 
 function textOf(message: any): string {

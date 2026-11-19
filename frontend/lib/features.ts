@@ -4,6 +4,9 @@ export type FeatureId =
   | "get_character_stats"
   | "get_character_equipment"
   | "get_character_hexa"
+  | "get_character_symbols"
+  | "get_character_union"
+  | "compare_characters"
   | "analyze_character_spec"
   | "recommend_spec_upgrade"
   | "estimate_boss_clear"
@@ -120,5 +123,23 @@ export const features: Feature[] = [
     description: "NEXON Open API에서 공지 목록과 본문을 가져와 Supabase Vector DB에 누적합니다. 관련 질문에는 공지 제목, 날짜, 원문 링크를 함께 제시합니다.",
     example: "최근 점검 보상과 일정을 안내한 공식 공지를 찾아줘",
     note: "최신 공지를 반영하려면 관리자 동기화 작업을 실행하거나 주기 실행을 설정해야 합니다.",
+  },
+  {
+    id: "get_character_symbols", number: "12", title: "심볼 성장 조회",
+    summary: "장착 심볼과 성장 상태를 확인합니다.",
+    description: "아케인심볼과 어센틱심볼의 레벨, 성장 수치와 포스를 조회합니다.",
+    example: "행운s의 심볼 성장을 보여줘", note: "제공되지 않은 정보는 표시하지 않습니다.",
+  },
+  {
+    id: "get_character_union", number: "13", title: "유니온 조회",
+    summary: "유니온 레벨과 등급을 확인합니다.",
+    description: "넥슨 API에서 유니온 레벨과 등급을 조회합니다.",
+    example: "행운s의 유니온 정보를 알려줘", note: "제공되지 않은 정보는 표시하지 않습니다.",
+  },
+  {
+    id: "compare_characters", number: "14", title: "캐릭터 비교",
+    summary: "두 캐릭터의 공통 능력치를 비교합니다.",
+    description: "두 캐릭터의 기본 정보와 동일한 능력치를 비교합니다.",
+    example: "행운s와 아델의 능력치를 비교해줘", note: "캐릭터 이름 두 개가 필요합니다.",
   },
 ];

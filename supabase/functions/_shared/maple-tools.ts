@@ -64,7 +64,7 @@ export type ToolContext = {
   imageAttached: boolean;
   searchContext?: string;
   ocidCache?: Map<string, string>;
-  onCharacterLookup?: (name: string) => void;
+  onCharacterLookup?: (name: string, toolName: string) => void;
 };
 
 export type GuideDocument = {
@@ -151,7 +151,8 @@ export function buildMapleTools(context: ToolContext) {
     tool(async (input: any) => {
       try {
         const result = await fn(input);
-        if (input.character_name) context.onCharacterLookup?.(input.character_name);
+        if (input.character_name) context.onCharacterLookup?.(input.character_name, name);
+        if (Array.isArray(input.character_names)) for (const characterName of input.character_names) context.onCharacterLookup?.(characterName, name);
         return asJson(result);
       }
       catch (error) { return `조회 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`; }
@@ -196,6 +197,26 @@ export function buildMapleTools(context: ToolContext) {
     ]);
     return { character, hexa_matrix: matrix, hexa_stat: stat };
   }, characterSchema);
+
+  const symbols = apiTool("get_character_symbols", "캐릭터의 아케인 및 어센틱 심볼과 성장 정보를 조회합니다.", async ({ character_name }) => {
+    const { data } = await getCharacterData(character_name, "character/symbol-equipment", context);
+    return data;
+  }, characterSchema);
+
+  const union = apiTool("get_character_union", "캐릭터의 유니온 레벨과 등급을 조회합니다.", async ({ character_name }) => {
+    const { data } = await getCharacterData(character_name, "user/union", context);
+    return data;
+  }, characterSchema);
+
+  const compare = apiTool("compare_characters", "두 캐릭터의 동일한 기본 정보와 능력치를 비교합니다.", async ({ character_names }) => {
+    return await Promise.all(character_names.map(async (character_name: string) => {
+      const [basic, stats] = await Promise.all([
+        getCharacterData(character_name, "character/basic", context),
+        getCharacterData(character_name, "character/stat", context),
+      ]);
+      return { basic: basic.data, stats: stats.data };
+    }));
+  }, z.object({ character_names: z.array(z.string().min(1).max(20)).length(2) }));
 
   const spec = apiTool("analyze_character_spec", "기본 정보, 능력치, 장비, HEXA 데이터를 함께 조회해 종합 분석합니다.", async ({ character_name }) => {
     const identity = await getOcid(character_name, context.nexonKey);
@@ -287,6 +308,9 @@ export function buildMapleTools(context: ToolContext) {
     get_character_stats: stats,
     get_character_equipment: equipment,
     get_character_hexa: hexa,
+    get_character_symbols: symbols,
+    get_character_union: union,
+    compare_characters: compare,
     analyze_character_spec: spec,
     recommend_spec_upgrade: upgrade,
     estimate_boss_clear: boss,

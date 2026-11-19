@@ -9,6 +9,8 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import Notices from "@/components/notices";
 import Hunting from "@/components/hunting";
 import Partners from "@/components/partners";
+import CharacterDashboard, { CharacterComparison, type CharacterSnapshot } from "@/components/character/dashboard";
+import Markdown from "@/components/character/markdown";
 
 type Citation = { title: string; source: string; url?: string | null };
 type ChatMessage = {
@@ -18,6 +20,9 @@ type ChatMessage = {
   created_at: string;
   sources?: Citation[];
   character?: CharacterProfile;
+  character_snapshot_ids?: number[];
+  executed_tools?: string[];
+  snapshots?: CharacterSnapshot[];
 };
 type ChatRoom = { id: string; title: string; created_at: string; updated_at: string };
 type CharacterProfile = { image?: string; name?: string; level?: number | string; job?: string; world?: string };
@@ -35,6 +40,8 @@ type StreamEvent = {
   profile?: CharacterProfile;
   sources?: Citation[];
   partial?: boolean;
+  snapshot?: CharacterSnapshot;
+  executed_tools?: string[];
 };
 
 export default function Assistant() {
@@ -145,16 +152,23 @@ export default function Assistant() {
     setError("");
     const { data, error: loadError } = await client
       .from("maple_chat_messages")
-      .select("id, role, content, sources, created_at")
+      .select("id, role, content, sources, created_at, character_snapshot_ids, executed_tools")
       .eq("room_id", room.id)
       .order("created_at", { ascending: true });
     if (loadError) {
       setError("대화 내용을 불러오지 못했습니다.");
       return;
     }
+    const loadedMessages = (data ?? []) as ChatMessage[];
+    const snapshotIds = [...new Set(loadedMessages.flatMap(message => message.character_snapshot_ids ?? []))];
+    if (snapshotIds.length) {
+      const { data: snapshots } = await client.from("maple_character_snapshots").select("id,ocid,character_name,data_date,responses,failures,created_at").in("id", snapshotIds);
+      const byId = new Map(((snapshots ?? []) as CharacterSnapshot[]).map(snapshot => [snapshot.id, snapshot]));
+      for (const message of loadedMessages) message.snapshots = (message.character_snapshot_ids ?? []).flatMap(id => byId.get(id) ? [byId.get(id)!] : []);
+    }
     setView("chat");
     setSelectedRoom(room);
-    setMessages((data ?? []) as ChatMessage[]);
+    setMessages(loadedMessages);
   }
 
   async function signOut() {
@@ -194,6 +208,8 @@ export default function Assistant() {
     let room = selectedRoom;
     let answer = "";
     let citations: Citation[] = [];
+    const savedSnapshots: CharacterSnapshot[] = [];
+    let executedTools: string[] = [];
     try {
       if (!room) {
         const { data, error: createError } = await client
@@ -268,6 +284,9 @@ export default function Assistant() {
         role: "assistant",
         content: cleanCharacterImageUrls(answer) || "답변을 생성하지 못했습니다.",
         sources: citations,
+        character_snapshot_ids: savedSnapshots.map(snapshot => snapshot.id),
+        executed_tools: executedTools,
+        response_schema_version: savedSnapshots.length ? 1 : null,
       });
       if (answerSaveError) {
         setError("답변은 생성했지만 대화 저장에 실패했습니다. 데이터베이스 정책을 확인해 주세요.");
@@ -290,6 +309,9 @@ export default function Assistant() {
           role: "assistant",
           content: fallback,
           sources: citations,
+          character_snapshot_ids: savedSnapshots.map(snapshot => snapshot.id),
+          executed_tools: executedTools,
+          response_schema_version: savedSnapshots.length ? 1 : null,
         });
         void refreshRooms();
       }
@@ -318,6 +340,11 @@ export default function Assistant() {
         ));
       } else if (eventType === "saved_character" && event.profile) {
         setSavedCharacter(event.profile as unknown as SavedCharacter);
+        if (event.snapshot) {
+          savedSnapshots.push(event.snapshot);
+          executedTools = event.executed_tools ?? [];
+          setMessages(previous => previous.map((item, index) => index === previous.length - 1 && item.role === "assistant" ? { ...item, snapshots: [...savedSnapshots], character_snapshot_ids: savedSnapshots.map(snapshot => snapshot.id), executed_tools: executedTools } : item));
+        }
         if (event.partial) setError("일부 캐릭터 정보는 넥슨 API에서 제공받지 못해 저장된 항목만 표시합니다.");
       } else if (eventType === "character_save_error") {
         setError(event.message ?? "캐릭터 정보를 저장하지 못했습니다.");
@@ -414,13 +441,16 @@ export default function Assistant() {
             {messages.map((message, index) => (
               <article className="message" key={message.id ?? `${index}-${message.role}`}>
                 <div className="message-meta"><div className="message-role">{message.role === "user" ? "나" : "MAPLE / AI"}</div><time>{formatTime(message.created_at)}</time></div>
-                {message.character?.image && (
+                {!message.snapshots?.length && message.character?.image && (
                   <div className="character-profile">
                     <img src={message.character.image} alt={`${message.character.name ?? "캐릭터"} 이미지`} />
                     <span>{[message.character.name, message.character.level && `Lv.${message.character.level}`, message.character.job, message.character.world].filter(Boolean).join(" · ")}</span>
                   </div>
                 )}
-                <div className="message-content">{cleanCharacterImageUrls(message.content) || (busy && index === messages.length - 1 ? "답변을 작성하고 있어요…" : "")}</div>
+                {message.snapshots && message.snapshots.length > 1 && <CharacterComparison snapshots={message.snapshots} />}
+                {message.snapshots?.map(snapshot => <CharacterDashboard key={snapshot.id} snapshot={snapshot} executedTools={message.executed_tools} />)}
+                {!!message.character_snapshot_ids?.length && !message.snapshots?.length && <p className="disclaimer">저장된 캐릭터 스냅샷이 만료되었거나 접근할 수 없습니다. 텍스트 답변은 보존됩니다.</p>}
+                <div className="message-content">{message.snapshots?.length ? <p className="dash-report-label">AI 분석 리포트</p> : null}<Markdown text={cleanCharacterImageUrls(message.content) || (busy && index === messages.length - 1 ? "답변을 작성하고 있어요…" : "")} /></div>
                 {!!message.sources?.length && (
                   <div className="source-list"><span className="eyebrow">참고한 문서</span>{message.sources.map((source, sourceIndex) => (
                     <a className="source-link" href={source.url || undefined} target={source.url ? "_blank" : undefined} rel={source.url ? "noreferrer" : undefined} key={`${source.source}-${sourceIndex}`}>
