@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { features, type FeatureId } from "@/lib/features";
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -11,6 +10,7 @@ import Hunting from "@/components/hunting";
 import Partners from "@/components/partners";
 import CharacterDashboard, { CharacterComparison, type CharacterSnapshot } from "@/components/character/dashboard";
 import Markdown from "@/components/character/markdown";
+import { LocalChatRepository, RemoteChatRepository, type ChatRepository } from "@/lib/chat/repository";
 
 type Citation = { title: string; source: string; url?: string | null };
 type ChatMessage = {
@@ -45,7 +45,13 @@ type StreamEvent = {
 };
 
 export default function Assistant() {
-  const router = useRouter();
+  const repositoryRef = useRef<ChatRepository | null>(null);
+  const identityRef = useRef<string | null>(null);
+  const generationRef = useRef(0);
+  const requestRef = useRef<AbortController | null>(null);
+  const [guestImportAvailable, setGuestImportAvailable] = useState(false);
+  const [hasGuestRooms, setHasGuestRooms] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [savedCharacter, setSavedCharacter] = useState<SavedCharacter | null>(null);
   const [view, setView] = useState<"chat" | "notices" | "hunting" | "partners">("chat");
   const [user, setUser] = useState<User | null>(null);
@@ -80,113 +86,120 @@ export default function Assistant() {
   useEffect(() => {
     let active = true;
     const client = getSupabaseClient();
-    if (!client) {
-      setStatus("Supabase 환경 변수를 설정해 주세요");
-      return;
-    }
-    const authenticatedClient = client as NonNullable<typeof client>;
-
-    async function initialize(sessionToken?: string | null) {
-      const token = sessionToken === undefined
-        ? (await authenticatedClient.auth.getSession()).data.session?.access_token
-        : sessionToken;
-      if (!token) {
-        if (!active) return;
-        setReady(false);
-        router.replace("/");
-        return;
-      }
-      const { data: { user: currentUser } } = await authenticatedClient.auth.getUser(token);
-      if (!active) return;
-      if (!currentUser) {
-        router.replace("/");
-        return;
-      }
-      setUser(currentUser);
-      setAccessToken(token);
-      const { data: character } = await authenticatedClient.from("maple_user_representative_characters")
-        .select("character_name, world_name, character_class, character_level, character_exp_rate, character_guild_name, character_image, combat_power, boss_damage, ignore_defense, union_level, union_artifact_level, dojang_best_floor, data_date")
-        .eq("user_id", currentUser.id).maybeSingle();
-      if (active && character) setSavedCharacter(character as SavedCharacter);
+    if (!client) { setStatus("Supabase 환경 변수를 설정해 주세요"); return; }
+    async function initialize(token: string | null, requestedUserId: string | null) {
+      const generation = ++generationRef.current;
+      requestRef.current?.abort();
+      repositoryRef.current = null;
+      identityRef.current = null;
+      setReady(false); setBusy(false); setUser(null); setAccessToken("");
+      setMessages([]); setRooms([]); setSelectedRoom(null); setSavedCharacter(null); setPrompt(""); setImage(null); setView("chat"); setGuestImportAvailable(false); setHasGuestRooms(false); setError("");
       try {
-        const { data, error: roomError } = await authenticatedClient
-          .from("maple_chat_rooms")
-          .select("id, title, created_at, updated_at")
-          .order("updated_at", { ascending: false });
-        if (roomError) throw roomError;
-        if (!active) return;
-        setRooms((data ?? []) as ChatRoom[]);
-        setStatus("준비 완료 · 공지와 공략을 검색합니다");
-        setReady(true);
-      } catch {
-        if (!active) return;
-        setError("채팅 목록을 불러오지 못했습니다. 데이터베이스 마이그레이션과 로그인을 확인해 주세요.");
-        setStatus("데이터베이스 연결 오류");
+        let currentUser: User | null = null;
+        if (token) {
+          const result = await client!.auth.getUser(token);
+          if (result.error || !result.data.user || result.data.user.id !== requestedUserId) throw new Error("로그인 상태를 확인하지 못했습니다. 새로고침해 주세요.");
+          currentUser = result.data.user;
+        }
+        if (!active || generation !== generationRef.current) return;
+        const repository: ChatRepository = currentUser ? new RemoteChatRepository(client!, currentUser.id) : new LocalChatRepository();
+        const [loadedRooms, character] = await Promise.all([repository.listRooms(), repository.getLastCharacter<SavedCharacter>()]);
+        if (!active || generation !== generationRef.current) return;
+        repositoryRef.current = repository; identityRef.current = currentUser?.id ?? "guest";
+        setUser(currentUser); setAccessToken(token ?? ""); setRooms(loadedRooms); setSavedCharacter(character);
+        setStatus("준비 완료 · 공지와 공략을 검색합니다"); setReady(true);
+        if (currentUser) {
+          const guestRooms = await new LocalChatRepository().listRooms();
+          if (active && generation === generationRef.current) setHasGuestRooms(guestRooms.length > 0);
+          if (active && generation === generationRef.current && guestRooms.length && localStorage.getItem(`maple-guest-import-${currentUser.id}`) !== "dismissed") setGuestImportAvailable(true);
+        }
+      } catch (cause) {
+        if (!active || generation !== generationRef.current) return;
+        setError(cause instanceof Error ? cause.message : "대화 저장소를 불러오지 못했습니다."); setStatus("연결을 확인해 주세요");
       }
     }
-
-    void initialize();
-    return () => {
-      active = false;
-    };
-  }, [router]);
+    const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED" && session?.user.id === identityRef.current) { setAccessToken(session.access_token); return; }
+      if (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        if (event !== "INITIAL_SESSION" && (session?.user.id ?? "guest") === identityRef.current) { setAccessToken(session?.access_token ?? ""); return; }
+        // Clear the previous identity before asynchronous verification or storage access.
+        generationRef.current++; requestRef.current?.abort(); repositoryRef.current = null; identityRef.current = null;
+        setReady(false); setMessages([]); setRooms([]); setSelectedRoom(null); setSavedCharacter(null); setPrompt(""); setImage(null); setView("chat"); setUser(null); setAccessToken("");
+        setTimeout(() => { if (active) void initialize(session?.access_token ?? null, session?.user.id ?? null); }, 0);
+      }
+    });
+    return () => { active = false; generationRef.current++; requestRef.current?.abort(); subscription.unsubscribe(); };
+  }, []);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
   async function refreshRooms() {
-    const client = getSupabaseClient();
-    if (!client) return;
-    const { data } = await client
-      .from("maple_chat_rooms")
-      .select("id, title, created_at, updated_at")
-      .order("updated_at", { ascending: false });
-    if (data) setRooms(data as ChatRoom[]);
+    const repository = repositoryRef.current, generation = generationRef.current;
+    if (!repository) return;
+    try { const data = await repository.listRooms(); if (generation === generationRef.current) setRooms(data); } catch { if (generation === generationRef.current) setError("대화 목록을 불러오지 못했습니다."); }
   }
 
   async function openRoom(room: ChatRoom) {
     if (busy) return;
-    const client = getSupabaseClient();
-    if (!client) return;
+    const repository = repositoryRef.current, generation = generationRef.current;
+    if (!repository) return;
     setError("");
-    const { data, error: loadError } = await client
-      .from("maple_chat_messages")
-      .select("id, role, content, sources, created_at, character_snapshot_ids, executed_tools")
-      .eq("room_id", room.id)
-      .order("created_at", { ascending: true });
-    if (loadError) {
-      setError("대화 내용을 불러오지 못했습니다.");
-      return;
-    }
-    const loadedMessages = (data ?? []) as ChatMessage[];
-    const snapshotIds = [...new Set(loadedMessages.flatMap(message => message.character_snapshot_ids ?? []))];
-    if (snapshotIds.length) {
-      const { data: snapshots } = await client.from("maple_character_snapshots").select("id,ocid,character_name,data_date,responses,failures,created_at").in("id", snapshotIds);
-      const byId = new Map(((snapshots ?? []) as CharacterSnapshot[]).map(snapshot => [snapshot.id, snapshot]));
-      for (const message of loadedMessages) message.snapshots = (message.character_snapshot_ids ?? []).flatMap(id => byId.get(id) ? [byId.get(id)!] : []);
-    }
-    setView("chat");
-    setSelectedRoom(room);
-    setMessages(loadedMessages);
+    try {
+      const data = await repository.getMessages(room.id);
+      if (generation !== generationRef.current) return;
+      setView("chat"); setSelectedRoom(room); setMessages(data as ChatMessage[]);
+    } catch { if (generation === generationRef.current) setError("대화 내용을 불러오지 못했습니다."); }
   }
 
+  async function deleteRoom(room: ChatRoom) {
+    if (busy || !window.confirm(`‘${room.title}’ 대화를 삭제할까요?`)) return;
+    const repository = repositoryRef.current, generation = generationRef.current;
+    if (!repository) return;
+    try { await repository.deleteRoom(room.id); if (generation !== generationRef.current) return; if (selectedRoom?.id === room.id) { setSelectedRoom(null); setMessages([]); } await refreshRooms(); }
+    catch { if (generation === generationRef.current) setError("대화를 삭제하지 못했습니다."); }
+  }
+
+  async function signIn() {
+    const client = getSupabaseClient(); if (!client) return;
+    const { error: authError } = await client.auth.signInWithOAuth({ provider:"google", options:{redirectTo:`${window.location.origin}/auth/callback?next=/assistant`} });
+    if (authError) setError(authError.message);
+  }
   async function signOut() {
-    const client = getSupabaseClient();
-    if (!client) return;
+    const client = getSupabaseClient(); if (!client) return;
     const { error: signOutError } = await client.auth.signOut();
     if (signOutError) setError(signOutError.message);
-    else router.replace("/");
+  }
+  async function importGuestRooms() {
+    const client = getSupabaseClient(); if (!client || !user || importing) return;
+    const generation = generationRef.current; const token = accessToken; setImporting(true); setError("");
+    try {
+      const local = new LocalChatRepository();
+      for (const room of await local.listRooms()) {
+        if (generation !== generationRef.current) return;
+        const localMessages = await local.getMessages(room.id);
+        if (generation !== generationRef.current) return;
+        const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/import_maple_guest_room`, {
+          method: "POST", headers: { "Content-Type": "application/json", apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ p_room: room, p_messages: localMessages }),
+        });
+        if (!response.ok) throw new Error("Import failed");
+      }
+      if (generation !== generationRef.current) return;
+      localStorage.setItem(`maple-guest-import-${user.id}`, "dismissed"); setGuestImportAvailable(false); await refreshRooms();
+    } catch { if (generation === generationRef.current) setError("대화 이전에 실패했습니다. 브라우저 원본은 보존되어 있으며 다시 시도할 수 있습니다."); }
+    finally { if (generation === generationRef.current) setImporting(false); }
   }
 
-  function useExample(example: string) {
+  function selectExample(example: string) {
     setPrompt(example);
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = prompt.trim();
-    if (!text || busy || !ready || !accessToken || !user) return;
+    if (!text || busy || !ready || !repositoryRef.current) return;
     const client = getSupabaseClient();
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -195,6 +208,12 @@ export default function Assistant() {
       return;
     }
 
+    const repository = repositoryRef.current;
+    const generation = generationRef.current;
+    const isGuest = !user;
+    const abort = new AbortController();
+    requestRef.current = abort;
+    const isCurrent = () => generation === generationRef.current && !abort.signal.aborted;
     setError("");
     setPrompt("");
     setBusy(true);
@@ -212,45 +231,26 @@ export default function Assistant() {
     let executedTools: string[] = [];
     try {
       if (!room) {
-        const { data, error: createError } = await client
-          .from("maple_chat_rooms")
-          .insert({ user_id: user.id, title: text.slice(0, 56) || "새 대화" })
-          .select("id, title, created_at, updated_at")
-          .single();
-        if (createError || !data) throw createError ?? new Error("채팅방을 만들지 못했습니다.");
-        room = data as ChatRoom;
+        room = await repository.createRoom(text.slice(0, 56) || "새 대화");
+        if (!isCurrent()) return;
         setSelectedRoom(room);
-      } else if (previousMessages.length === 0) {
-        const { data } = await client
-          .from("maple_chat_rooms")
-          .update({ title: text.slice(0, 56) || "새 대화" })
-          .eq("id", room.id)
-          .select("id, title, created_at, updated_at")
-          .single();
-        if (data) {
-          room = data as ChatRoom;
-          setSelectedRoom(room);
-        }
       }
-
-      const { error: userSaveError } = await client.from("maple_chat_messages").insert({
-        room_id: room.id,
-        user_id: user.id,
-        role: "user",
-        content: text,
-      });
-      if (userSaveError) throw userSaveError;
+      await repository.saveMessage(room.id, localUserMessage);
+      if (!isCurrent()) return;
       void refreshRooms();
 
       const { data: { session } } = await client.auth.getSession();
+      if (!isCurrent()) return;
+      if (!isGuest && session?.user.id !== user?.id) throw new Error("로그인 상태가 변경되었습니다. 다시 시도해 주세요.");
       const currentToken = session?.access_token ?? accessToken;
       const imageData = image ? await readImage(image) : undefined;
-      const response = await fetch(`${supabaseUrl}/functions/v1/maple-agent`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/${isGuest ? "maple-guest" : "maple-agent"}`, {
         method: "POST",
+        signal: abort.signal,
         headers: {
           "Content-Type": "application/json",
           apikey: publishableKey,
-          Authorization: `Bearer ${currentToken}`,
+          ...(isGuest ? {} : { Authorization: `Bearer ${currentToken}` }),
         },
         body: JSON.stringify({
           prompt: text,
@@ -270,6 +270,7 @@ export default function Assistant() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (!isCurrent()) return;
         buffer += decoder.decode(value, { stream: true }).replaceAll("\r\n", "\n");
         const frames = buffer.split("\n\n");
         buffer = frames.pop() ?? "";
@@ -278,22 +279,22 @@ export default function Assistant() {
       buffer += decoder.decode();
       if (buffer.trim()) processFrame(buffer);
 
-      const { error: answerSaveError } = await client.from("maple_chat_messages").insert({
-        room_id: room.id,
-        user_id: user.id,
-        role: "assistant",
-        content: cleanCharacterImageUrls(answer) || "답변을 생성하지 못했습니다.",
-        sources: citations,
-        character_snapshot_ids: savedSnapshots.map(snapshot => snapshot.id),
-        executed_tools: executedTools,
-        response_schema_version: savedSnapshots.length ? 1 : null,
-      });
-      if (answerSaveError) {
-        setError("답변은 생성했지만 대화 저장에 실패했습니다. 데이터베이스 정책을 확인해 주세요.");
+      if (!isCurrent()) return;
+      try {
+        await repository.saveMessage(room.id, {
+          role: "assistant", content: cleanCharacterImageUrls(answer) || "답변을 생성하지 못했습니다.",
+          created_at: new Date().toISOString(), sources: citations,
+          character_snapshot_ids: isGuest ? [] : savedSnapshots.map(snapshot => snapshot.id),
+          snapshots: isGuest ? [...savedSnapshots] : undefined,
+          executed_tools: executedTools,
+        });
+      } catch {
+        if (isCurrent()) setError("답변은 생성했지만 대화 저장에 실패했습니다.");
       }
       setStatus("준비 완료 · 공지와 공략을 검색합니다");
       void refreshRooms();
     } catch (cause) {
+      if (!isCurrent()) return;
       const message = cause instanceof Error ? cause.message : "요청을 처리하지 못했습니다.";
       setError(message);
       const fallback = answer || "요청을 처리하지 못했습니다.";
@@ -302,26 +303,16 @@ export default function Assistant() {
           ? { ...item, content: fallback, sources: citations }
           : item,
       ));
-      if (room && user) {
-        await client.from("maple_chat_messages").insert({
-          room_id: room.id,
-          user_id: user.id,
-          role: "assistant",
-          content: fallback,
-          sources: citations,
-          character_snapshot_ids: savedSnapshots.map(snapshot => snapshot.id),
-          executed_tools: executedTools,
-          response_schema_version: savedSnapshots.length ? 1 : null,
-        });
-        void refreshRooms();
+      if (room && isCurrent()) {
+        try { await repository.saveMessage(room.id, { role:"assistant", content:fallback, sources:citations, created_at:new Date().toISOString(), character_snapshot_ids:isGuest ? [] : savedSnapshots.map(snapshot => snapshot.id), snapshots:isGuest ? [...savedSnapshots] : undefined, executed_tools:executedTools }); void refreshRooms(); } catch { /* Keep the original error visible. */ }
       }
       setStatus("요청 처리에 실패했습니다");
     } finally {
-      setBusy(false);
-      setImage(null);
+      if (isCurrent()) { setBusy(false); setImage(null); requestRef.current = null; }
     }
 
     function processFrame(frame: string) {
+      if (!isCurrent()) return;
       let eventType = "message";
       let data = "";
       for (const line of frame.split("\n")) {
@@ -340,10 +331,11 @@ export default function Assistant() {
         ));
       } else if (eventType === "saved_character" && event.profile) {
         setSavedCharacter(event.profile as unknown as SavedCharacter);
+        if (isGuest) void repository.saveLastCharacter(event.profile).catch(() => { if (isCurrent()) setError("최근 캐릭터를 브라우저에 저장하지 못했습니다."); });
         if (event.snapshot) {
           savedSnapshots.push(event.snapshot);
           executedTools = event.executed_tools ?? [];
-          setMessages(previous => previous.map((item, index) => index === previous.length - 1 && item.role === "assistant" ? { ...item, snapshots: [...savedSnapshots], character_snapshot_ids: savedSnapshots.map(snapshot => snapshot.id), executed_tools: executedTools } : item));
+          setMessages(previous => previous.map((item, index) => index === previous.length - 1 && item.role === "assistant" ? { ...item, snapshots: [...savedSnapshots], character_snapshot_ids: isGuest ? [] : savedSnapshots.map(snapshot => snapshot.id), executed_tools: executedTools } : item));
         }
         if (event.partial) setError("일부 캐릭터 정보는 넥슨 API에서 제공받지 못해 저장된 항목만 표시합니다.");
       } else if (eventType === "character_save_error") {
@@ -375,8 +367,8 @@ export default function Assistant() {
         <Link className="wordmark" href="/">MAPLE / AI</Link>
         <div className="profile-actions">
           {avatar && <img className="avatar" src={avatar} alt="프로필" referrerPolicy="no-referrer" />}
-          <span className="profile-name">{displayName}</span>
-          <button className="text-button compact-button" type="button" onClick={signOut}>로그아웃</button>
+          <span className={user ? "profile-name" : "guest-mode-label"}>{user ? displayName : "게스트"}</span>
+          {user ? <button className="text-button compact-button" type="button" onClick={signOut}>로그아웃</button> : <button className="text-button compact-button" type="button" onClick={signIn} disabled={!ready}>Google 로그인</button>}
         </div>
       </nav>
 
@@ -391,22 +383,24 @@ export default function Assistant() {
 
       <div className="assistant-layout">
         <aside className="tool-panel">
+          {ready && !user && <p className="guest-notice">게스트 모드 · 대화는 이 브라우저에 저장됩니다. 브라우저 데이터 삭제 또는 시크릿 모드 종료 시 사라질 수 있습니다.</p>}
           {savedCharacter && <CharacterCard character={savedCharacter} />}
           <nav className="section-nav" aria-label="서비스 메뉴"><button type="button" className={view === "chat" ? "active" : ""} aria-current={view === "chat" ? "page" : undefined} onClick={() => setView("chat")}>대화 <span>↗</span></button><button type="button" className={view === "notices" ? "active" : ""} aria-current={view === "notices" ? "page" : undefined} onClick={() => setView("notices")}>공지사항 <span>↗</span></button><button type="button" className={view === "hunting" ? "active" : ""} aria-current={view === "hunting" ? "page" : undefined} onClick={() => setView("hunting")}>사냥터 <span>↗</span></button><button type="button" className={view === "partners" ? "active" : ""} aria-current={view === "partners" ? "page" : undefined} onClick={() => setView("partners")}>파트너스 <span>↗</span></button></nav>
           <div className="room-heading"><span className="eyebrow">YOUR CHATS</span><button className="text-button compact-button" type="button" disabled={busy} onClick={() => { setView("chat"); setSelectedRoom(null); setMessages([]); setError(""); }}>+ 새 대화</button></div>
           <div className="room-list">
             {rooms.length === 0 && <p className="disclaimer">저장된 대화가 없습니다.</p>}
             {rooms.map((room) => (
-              <button className={`room-button${selectedRoom?.id === room.id ? " active" : ""}`} type="button" key={room.id} onClick={() => void openRoom(room)} disabled={busy}>
-                <span>{room.title}</span><small>{formatTime(room.updated_at)}</small>
-              </button>
+              <div className="room-entry" key={room.id}>
+                <button className={`room-button${selectedRoom?.id === room.id ? " active" : ""}`} type="button" onClick={() => void openRoom(room)} disabled={busy}><span>{room.title}</span><small>{formatTime(room.updated_at)}</small></button>
+                <button className="room-delete" type="button" aria-label={`${room.title} 대화 삭제`} onClick={() => void deleteRoom(room)} disabled={busy}>×</button>
+              </div>
             ))}
           </div>
 
           <div className="eyebrow">질문 예시</div>
           <div className="quick-prompts">
             {(currentFeature ? [currentFeature.example] : ["마일리지 개편과 소멸 일정을 알려줘", "캐릭터 장비를 보고 스펙업할 점을 알려줘"]).map((example) => (
-              <button className="text-button prompt-example" type="button" key={example} onClick={() => useExample(example)}>{example}</button>
+              <button className="text-button prompt-example" type="button" key={example} onClick={() => selectExample(example)}>{example}</button>
             ))}
           </div>
           <div className="upload-row">
@@ -420,6 +414,8 @@ export default function Assistant() {
         {view === "hunting" && ready && <Hunting />}
         {view === "partners" && ready && <Partners />}
         <section hidden={view !== "chat"} className="chat-panel" aria-label="메이플스토리 AI 채팅">
+          {user && hasGuestRooms && !guestImportAvailable && <button className="text-button compact-button" type="button" onClick={() => setGuestImportAvailable(true)}>브라우저 대화 가져오기</button>}
+          {guestImportAvailable && user && <div className="guest-import" role="status"><p>로그인 전에 나눈 대화가 있습니다. 기존 대화를 현재 계정에 저장하시겠습니까?</p><div><button type="button" onClick={() => void importGuestRooms()} disabled={importing}>{importing ? "저장 중…" : "계정에 저장하기"}</button><button type="button" disabled={importing} onClick={() => { localStorage.setItem(`maple-guest-import-${user.id}`, "dismissed"); setGuestImportAvailable(false); }}>브라우저에만 유지하기</button></div></div>}
           <div className="chat-toolbar">
             <div className="status-text" aria-live="polite">{status}</div>
             <div className="chat-tool-picker">
@@ -448,7 +444,7 @@ export default function Assistant() {
                   </div>
                 )}
                 {message.snapshots && message.snapshots.length > 1 && <CharacterComparison snapshots={message.snapshots} />}
-                {message.snapshots?.map(snapshot => <CharacterDashboard key={snapshot.id} snapshot={snapshot} executedTools={message.executed_tools} />)}
+                {message.snapshots?.map(snapshot => <CharacterDashboard key={snapshot.id} snapshot={snapshot} executedTools={message.executed_tools} guest={!user} />)}
                 {!!message.character_snapshot_ids?.length && !message.snapshots?.length && <p className="disclaimer">저장된 캐릭터 스냅샷이 만료되었거나 접근할 수 없습니다. 텍스트 답변은 보존됩니다.</p>}
                 <div className="message-content">{message.snapshots?.length ? <p className="dash-report-label">AI 분석 리포트</p> : null}<Markdown text={cleanCharacterImageUrls(message.content) || (busy && index === messages.length - 1 ? "답변을 작성하고 있어요…" : "")} /></div>
                 {!!message.sources?.length && (
@@ -461,7 +457,7 @@ export default function Assistant() {
               </article>
             ))}
           </div>
-          {!ready && <p className="disclaimer">Google 계정과 Supabase 설정을 확인하고 있습니다.</p>}
+          {!ready && <p className="disclaimer">로그인 상태와 저장소를 확인하고 있습니다.</p>}
           {error && <p className="error-text" role="alert">{error}</p>}
           <form className="chat-form" onSubmit={onSubmit}>
             <input className="chat-input" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="공지, 공략, 캐릭터에 관해 물어보세요…" disabled={!ready || busy} />

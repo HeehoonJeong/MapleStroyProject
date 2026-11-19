@@ -319,3 +319,16 @@ body { background: radial-gradient(ellipse at 90% 0%, #f8e5cf 0, transparent 34r
 .dash-comparison { margin:14px 0; padding:16px; border:1px solid var(--hairline); border-radius:12px; background:#fffaf4; font-family:var(--display); }.dash-comparison h4 { margin:0; font-size:14px; }.dash-comparison p { margin:7px 0 12px; color:var(--muted); font:11px/1.5 var(--display); }.dash-comparison-scroll { overflow-x:auto; }.dash-comparison table { width:100%; border-collapse:collapse; font-size:11px; }.dash-comparison th,.dash-comparison td { padding:8px; border-bottom:1px solid var(--hairline); text-align:left; white-space:nowrap; }.dash-comparison th small { display:block; color:var(--muted); font-weight:400; }
 
 .equip-close { position:sticky; top:7px; float:right; z-index:2; margin:6px 7px -32px 0; width:28px; height:28px; border:1px solid #718496; border-radius:7px; background:#26323b; color:#fff; font:20px/1 var(--display); cursor:pointer; }
+
+.landing-video-wrap { position:relative; min-width:0; }
+.landing-video-wrap .landing-art { display:block; }
+.landing-video-control { position:absolute; right:12px; bottom:12px; padding:7px 10px; border:1px solid #ffffff80; border-radius:7px; background:#222b; color:white; cursor:pointer; font:11px/1.2 var(--display); }
+.landing-video-control:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+.guest-notice { margin:0 0 18px; padding:12px; border:1px solid var(--hairline); border-radius:9px; background:var(--surface); color:var(--muted); font:11px/1.6 var(--display); }
+.room-entry { display:flex; align-items:center; gap:4px; }.room-entry .room-button { flex:1; min-width:0; }.room-delete { flex:none; width:28px; height:28px; border:0; background:transparent; color:var(--muted); font-size:18px; cursor:pointer; }.room-delete:hover { color:#a85025; }
+.guest-import { margin:0 0 18px; padding:14px; border:1px solid var(--hairline); border-radius:10px; background:#fff8ef; }.guest-import p { margin:0 0 10px; font:12px/1.6 var(--display); }.guest-import div { display:flex; flex-wrap:wrap; gap:8px; }.guest-import button { padding:8px 10px; border:1px solid var(--hairline-strong); border-radius:7px; background:#fff; color:var(--body); cursor:pointer; font:11px var(--display); }
+
+.guest-mode-label { color:var(--body); font:12px var(--display); white-space:nowrap; }
+
+.landing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.guest-start-button { min-height: 54px; gap: 10px; padding: 16px 22px; font-size: 12px; }

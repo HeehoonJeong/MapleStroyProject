@@ -81,7 +81,7 @@ function profileFromMessages(messages: any[]): Record<string, unknown> | undefin
 }
 
 // Preserve raw responses so future features can use every returned equipment option.
-async function saveCharacterSnapshot(name: string, userId: string, apiKey: string, db: any) {
+async function saveCharacterSnapshot(name: string, userId: string | null, apiKey: string, db: any) {
   const { ocid } = await getOcid(name, apiKey);
   const date = latestAvailableDate();
   const endpoints = [
@@ -114,11 +114,14 @@ async function saveCharacterSnapshot(name: string, userId: string, apiKey: strin
   const union = responses["user/union"] as Record<string, any> | undefined;
   const artifact = responses["user/union-artifact"] as Record<string, any> | undefined;
   const dojang = responses["character/dojang"] as Record<string, any> | undefined;
-  const snapshot = await db.from("maple_character_snapshots").insert({
-    user_id: userId, ocid, character_name: basic.character_name, data_date: date,
-    responses, failures,
-  }).select("id, ocid, character_name, data_date, responses, failures, created_at").single();
-  if (snapshot.error) throw new Error("캐릭터 데이터 저장에 실패했습니다.");
+  let snapshotData: Record<string, unknown>;
+  if (userId) {
+    const snapshot = await db.from("maple_character_snapshots").insert({ user_id: userId, ocid, character_name: basic.character_name, data_date: date, responses, failures }).select("id, ocid, character_name, data_date, responses, failures, created_at").single();
+    if (snapshot.error) throw new Error("캐릭터 데이터 저장에 실패했습니다.");
+    snapshotData = snapshot.data;
+  } else {
+    snapshotData = { id: Date.now() * 1000 + Math.floor(Math.random() * 1000), ocid, character_name: basic.character_name, data_date: date, responses, failures, created_at: new Date().toISOString() };
+  }
   const profile = {
     user_id: userId, character_name: basic.character_name, world_name: basic.world_name ?? null,
     character_class: basic.character_class ?? null, character_level: basic.character_level ?? null,
@@ -131,9 +134,11 @@ async function saveCharacterSnapshot(name: string, userId: string, apiKey: strin
     dojang_best_floor: dojang?.dojang_best_floor ?? null, dojang_best_time: dojang?.dojang_best_time ?? null,
     data_date: date, synced_at: new Date().toISOString(),
   };
-  const saved = await db.from("maple_user_representative_characters").upsert(profile, { onConflict: "user_id" });
-  if (saved.error) throw new Error("최근 캐릭터 저장에 실패했습니다.");
-  return { profile, snapshot: snapshot.data, partial: ["character/stat", "character/item-equipment"].some((key) => Boolean(failures[key])) };
+  if (userId) {
+    const saved = await db.from("maple_user_representative_characters").upsert(profile, { onConflict: "user_id" });
+    if (saved.error) throw new Error("최근 캐릭터 저장에 실패했습니다.");
+  }
+  return { profile, snapshot: snapshotData, partial: ["character/stat", "character/item-equipment"].some((key) => Boolean(failures[key])) };
 }
 
 function sourcesFromMessages(messages: any[]): Array<Record<string, unknown>> {
@@ -173,8 +178,7 @@ function event(controller: ReadableStreamDefaultController<Uint8Array>, name: st
   controller.enqueue(new TextEncoder().encode(`event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`));
 }
 
-export default {
-  fetch: withSupabase({ auth: "user" }, async (request, context) => {
+export async function handleMapleRequest(request: Request, context: any, guest = false) {
     if (request.method !== "POST") {
       return Response.json({ error: "POST is required." }, { status: 405 });
     }
@@ -205,11 +209,24 @@ export default {
       imageUrl = `data:${image.mimeType};base64,${image.base64}`;
     }
 
-    const userId = context.userClaims?.id;
-    if (!userId) return Response.json({ error: "인증된 사용자만 사용할 수 있습니다." }, { status: 401 });
-    const { data: allowed, error: quotaError } = await context.supabaseAdmin.rpc("consume_maple_ai_quota", { p_user_id: userId });
-    if (quotaError) return Response.json({ error: "요청 한도 확인에 실패했습니다." }, { status: 503 });
-    if (!allowed) return Response.json({ error: "분당 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요." }, { status: 429 });
+    const userId: string | null = guest ? null : context.userClaims?.id ?? null;
+    if (!guest && !userId) return Response.json({ error: "인증된 사용자만 사용할 수 있습니다." }, { status: 401 });
+    let lease: string | null = null;
+    if (guest) {
+      const ip = request.headers.get("cf-connecting-ip");
+      const salt = Deno.env.get("GUEST_RATE_SALT");
+      if (!ip || !salt) return Response.json({ error: "게스트 요청 보호 설정을 확인해 주세요." }, { status: 503 });
+      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${ip}`));
+      const digest = Array.from(new Uint8Array(hash)).map(value => value.toString(16).padStart(2, "0")).join("");
+      const { data, error } = await context.supabaseAdmin.rpc("acquire_maple_guest_request", { p_ip_digest: digest, p_per_minute: Number(Deno.env.get("GUEST_PER_MINUTE") ?? 4), p_daily_total: Number(Deno.env.get("GUEST_DAILY_TOTAL") ?? 500), p_concurrent: Number(Deno.env.get("GUEST_CONCURRENT") ?? 2) });
+      if (error) return Response.json({ error: "요청 한도를 확인하지 못했습니다." }, { status: 503 });
+      if (!data) return Response.json({ error: "게스트 이용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요." }, { status: 429 });
+      lease = data;
+    } else {
+      const { data: allowed, error: quotaError } = await context.supabaseAdmin.rpc("consume_maple_ai_quota", { p_user_id: userId });
+      if (quotaError) return Response.json({ error: "요청 한도 확인에 실패했습니다." }, { status: 503 });
+      if (!allowed) return Response.json({ error: "분당 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요." }, { status: 429 });
+    }
 
     const history = validateHistory(body.history);
     const retrievalQuery = [
@@ -242,7 +259,7 @@ export default {
     const selectedTools = feature === "auto"
       ? Object.values(toolsByName)
       : [toolsByName[feature as FeatureName]];
-    const model = new ChatOpenAI({ model: "gpt-5.4-nano", apiKey: openAiKey, temperature: 0 });
+    const model = new ChatOpenAI({ model: "gpt-5.4-nano", apiKey: openAiKey, temperature: 0, maxTokens: 4096 });
     const agent = createAgent({
       model,
       tools: selectedTools,
@@ -320,6 +337,7 @@ export default {
           } catch {
             send("error", { message: "요청을 처리하지 못했습니다. 서버 설정과 API 권한을 확인해 주세요." });
           } finally {
+            if (lease) await context.supabaseAdmin.from("maple_guest_requests").update({ finished_at: new Date().toISOString() }).eq("id", lease);
             if (!cancelled) controller.close();
           }
         })();
@@ -334,5 +352,6 @@ export default {
         "X-Accel-Buffering": "no",
       },
     });
-  }),
-};
+}
+
+export default { fetch: withSupabase({ auth: "user" }, (request, context) => handleMapleRequest(request, context)) };

@@ -21,3 +21,6 @@ supabase/functions.env
 
 # Local hunting prototype database
 frontend/.local/
+
+# Preserve the prior source video locally outside the deployed public directory.
+media/original/
