@@ -150,7 +150,7 @@ curl --fail-with-body -X POST "$SUPABASE_URL/functions/v1/sync-maple-notices" \
 
 ### 질문 도구 활성화와 사용자 피드백
 
-`frontend/lib/feature-flags.ts`의 `estimate_boss_clear`, `analyze_auction_screenshot`을 `false`로 두면 두 기능이 드롭다운과 자동 Tool Calling에서 제외되며 직접 호출도 거부됩니다. `true`로 바꾼 뒤 프런트엔드와 `maple-agent`, `maple-guest` 함수를 모두 다시 빌드·배포하면 복구됩니다. 내부 도구 ID와 기존 대화 기록은 유지됩니다.
+`frontend/lib/feature-flags.ts`의 `estimate_boss_clear`, `analyze_auction_screenshot`, `search_maple_guide`를 `false`로 두면 해당 기능이 드롭다운과 자동 Tool Calling에서 제외되며 직접 호출도 거부됩니다. `true`로 바꾼 뒤 프런트엔드와 `maple-agent`, `maple-guest` 함수를 모두 다시 빌드·배포하면 복구됩니다. 내부 도구 ID와 기존 대화 기록은 유지됩니다.
 
 `202611190003_user_feedback.sql`은 `maple_user_feedback` 및 비공개 요청 제한 테이블을 생성합니다. 별도 관리자 화면 없이 Supabase Dashboard의 Table Editor에서 피드백을 열람하고 `status`(pending, reviewing, planned, resolved, dismissed)와 `developer_note`를 관리할 수 있습니다. 일반 사용자는 테이블을 조회하거나 수정할 수 없고, `submit-feedback` Edge Function으로 제출만 할 수 있습니다. 함수는 기존 `GUEST_RATE_SALT` 서버 비밀값과 신뢰할 수 있는 `cf-connecting-ip` 헤더가 필요합니다. 요청 제한은 IP별 시간당 5건, 전체 하루 300건, 동일 내용 10분 중복 방지이며 salt가 적용된 해시는 피드백과 분리된 임시 테이블에 보관하고 24시간을 지난 항목은 다음 제출 시 삭제합니다. 자동화 방지용 숨김 필드가 있지만 CAPTCHA 수준의 차단은 제공하지 않습니다. 함수는 AI나 넥슨 API를 호출하지 않습니다.
 

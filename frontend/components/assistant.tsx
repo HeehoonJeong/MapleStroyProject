@@ -109,7 +109,7 @@ export default function Assistant() {
         if (!active || generation !== generationRef.current) return;
         repositoryRef.current = repository; identityRef.current = currentUser?.id ?? "guest";
         setUser(currentUser); setAccessToken(token ?? ""); setRooms(loadedRooms); setSavedCharacter(character);
-        setStatus("준비 완료 · 공지와 공략을 검색합니다"); setReady(true);
+        setStatus(isToolEnabled("search_maple_guide") ? "준비 완료 · 공지와 공략을 검색합니다" : "준비 완료 · 공지와 캐릭터 정보를 확인합니다"); setReady(true);
         if (currentUser) {
           const guestRooms = await new LocalChatRepository().listRooms();
           if (active && generation === generationRef.current) setHasGuestRooms(guestRooms.length > 0);
@@ -293,7 +293,7 @@ export default function Assistant() {
       } catch {
         if (isCurrent()) setError("답변은 생성했지만 대화 저장에 실패했습니다.");
       }
-      setStatus("준비 완료 · 공지와 공략을 검색합니다");
+      setStatus(isToolEnabled("search_maple_guide") ? "준비 완료 · 공지와 공략을 검색합니다" : "준비 완료 · 공지와 캐릭터 정보를 확인합니다");
       void refreshRooms();
     } catch (cause) {
       if (!isCurrent()) return;
@@ -431,7 +431,7 @@ export default function Assistant() {
                   <span aria-hidden="true" className="chat-tool-chevron">⌄</span>
                 </div>
               </div>
-              <p id="feature-description" className="chat-tool-description">{currentFeature?.summary ?? "질문에 맞춰 공지, 공략, 캐릭터 조회 도구를 선택합니다."}</p>
+              <p id="feature-description" className="chat-tool-description">{currentFeature?.summary ?? (isToolEnabled("search_maple_guide") ? "질문에 맞춰 공지, 공략, 캐릭터 조회 도구를 선택합니다." : "질문에 맞춰 공지 검색과 캐릭터 조회 도구를 선택합니다.")}</p>
             </div>
           </div>
           <div className="chat-log" ref={logRef}>
