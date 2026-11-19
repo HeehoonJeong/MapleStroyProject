@@ -435,7 +435,7 @@ export default function Assistant() {
           <div className="chat-log" ref={logRef}>
             {messages.length === 0 && <div className="chat-empty"><span className="eyebrow">A BETTER WAY TO PLAY</span><h2>메이플의 다음 모험을<br />함께 준비해요.</h2><p>공지, 이벤트, 육성, 캐릭터에 관해 질문해 보세요.</p></div>}
             {messages.map((message, index) => (
-              <article className="message" key={message.id ?? `${index}-${message.role}`}>
+              <article className={`message message--${message.role}`} key={message.id ?? `${index}-${message.role}`}>
                 <div className="message-meta"><div className="message-role">{message.role === "user" ? "나" : "MAPLE / AI"}</div><time>{formatTime(message.created_at)}</time></div>
                 {!message.snapshots?.length && message.character?.image && (
                   <div className="character-profile">

@@ -10,9 +10,15 @@
   --hairline: #262626;
   --hairline-strong: #3a3a3a;
   --link: #c3d9f3;
-  --display: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --text: "Iowan Old Style", "Noto Serif KR", "Batang", "Times New Roman", serif;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+  --display: var(--font-suit), "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --text: var(--display);
+  --mono: var(--display);
+  --code: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --type-body: 1rem;
+  --type-small: .8125rem;
+  --type-meta: .75rem;
+  --leading-body: 1.7;
+  --tracking-body: -.01em;
 }
 
 * { box-sizing: border-box; }
@@ -177,7 +183,7 @@ p { color: var(--body); font-size: 16px; line-height: 1.65; }
   --elevated: #f0e7db;
   --white: #302b29;
   --body: #574d46;
-  --muted: #796e65;
+  --muted: #70645c;
   --hairline: #e2d7c9;
   --hairline-strong: #cdbba9;
   --link: #86502c;
@@ -332,3 +338,64 @@ body { background: radial-gradient(ellipse at 90% 0%, #f8e5cf 0, transparent 34r
 
 .landing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .guest-start-button { min-height: 54px; gap: 10px; padding: 16px 22px; font-size: 12px; }
+
+/* Typography: one Korean/Latin variable family, with a monospace face only for code. */
+body { font-size:var(--type-body); line-height:1.6; letter-spacing:var(--tracking-body); font-synthesis:none; }
+h1,h2,h3,h4 { letter-spacing:-.025em; text-transform:none; }
+h1 { font-weight:650; } h2,h3 { font-weight:650; }
+p { line-height:var(--leading-body); }
+.eyebrow,.message-role,.status-text,.footer,.wordmark { letter-spacing:.06em; }
+.eyebrow,.message-role,.status-text,.room-button small,.message-meta time,.source-link small,.footer { font-size:var(--type-meta); font-weight:500; line-height:1.5; }
+.outline-button,.text-button { font-size:var(--type-small); font-weight:600; letter-spacing:0; line-height:1.35; }
+.outline-button { background:#a35b32; border-color:#a35b32; }
+.compact-button { font-size:var(--type-meta); }
+.landing-description { font-size:clamp(1rem,1.15vw,1.125rem); line-height:1.75; }
+.landing-proof { font-size:var(--type-meta); letter-spacing:0; }
+.landing-details p { font-size:.9375rem; }
+.chat-input,.tool-select,.chat-tool-select,.partners-search input { font-size:1rem; }
+.chat-tool-description,.guest-notice,.guest-import p,.prompt-example { font-size:var(--type-small); line-height:1.6; }
+.chat-log { min-width:0; }
+.message { padding:24px 0; }
+.message--user .message-content { width:fit-content; max-width:min(100%,72ch); padding:12px 16px; border-radius:14px; background:#f5eadf; color:#302b29; font-weight:550; }
+.message-content { color:#403832; font-size:1rem; line-height:1.8; letter-spacing:-.01em; white-space:normal; }
+.message-markdown { max-width:72ch; overflow-wrap:anywhere; }
+.message-markdown p { margin:0 0 1em; line-height:inherit; }
+.message-markdown > :last-child { margin-bottom:0; }
+.message-markdown h1,.message-markdown h2,.message-markdown h3 { margin:1.35em 0 .55em; line-height:1.4; letter-spacing:-.02em; }
+.message-markdown h1 { font-size:1.35em; }.message-markdown h2 { font-size:1.2em; }.message-markdown h3 { font-size:1.08em; }
+.message-markdown ul,.message-markdown ol { margin:.7em 0 1em; padding-left:1.5em; }
+.message-markdown li + li { margin-top:.3em; }
+.message-markdown strong { font-weight:700; color:#302b29; }
+.message-markdown blockquote { margin:1em 0; line-height:1.75; }
+.message-markdown pre,.message-markdown code { font-family:var(--code); font-size:.9em; letter-spacing:0; }
+.message-markdown pre code { font-size:1em; }
+.message-markdown th,.message-markdown td { min-width:5em; padding:9px 12px; line-height:1.5; }
+.message-markdown th { background:#f3eadf; font-weight:700; }
+.source-link,.source-link small { line-height:1.55; }
+.saved-character,.character-dashboard,.hunt-panel,.notice-panel,.partners-panel { font-variant-numeric:tabular-nums; }
+.saved-character-stats,.saved-character-power,.saved-character-date,.saved-character-identity { font-size:var(--type-small); }
+.dash-tabs button,.dashboard-switch button,.dash-stat-grid span,.dash-small-card span,.dash-credit,.dashboard-section-title p,.dash-comparison table,.dash-history > div { font-size:var(--type-meta); line-height:1.5; }
+.dash-stat-grid strong,.dash-small-card,.dash-extra,.dash-identity p,.dashboard-empty,.dash-hint,.dash-errors { font-size:var(--type-small); line-height:1.55; }
+.dash-power strong,.saved-character-power strong,.hunt-result-grid strong { font-variant-numeric:tabular-nums; font-weight:700; }
+.equip-card-content > strong { font-size:var(--type-small); line-height:1.45; }
+.equip-part,.equip-badges,.equip-soul-label,.equip-potential { font-size:var(--type-meta); line-height:1.5; }
+.equip-slot .equip-card-content > strong,.equip-slot-empty { font-size:var(--type-meta); line-height:1.4; }
+.equip-detail { font-size:var(--type-small); line-height:1.6; font-variant-numeric:tabular-nums; }
+.equip-detail h4 { font-size:1rem; line-height:1.4; }
+.equip-detail p,.equip-detail .equip-potential,.equip-breakdown,.equip-legend { font-size:var(--type-meta); line-height:1.55; }
+.equip-detail .equip-potential strong { font-weight:700; }
+.notice-row,.notice-filter,.hunt-notice,.hunt-controls label,.hunt-results p,.partners-search input,.partners-filters button,.partners-results,.partner-card p,.partners-empty p { font-size:var(--type-small); line-height:1.6; }
+.notice-row time,.notice-badge,.hunt-controls small,.hunt-map-image small,.hunt-monster span,.partner-category,.partner-tags span,.partners-source,.guest-import button { font-size:var(--type-meta); line-height:1.5; }
+.partners-search input::placeholder { color:#71645a; }
+@media(max-width:600px) {
+  .message-content { font-size:1rem; line-height:1.75; }
+  .notice-row { grid-template-columns:62px minmax(0,1fr) 76px; }
+  .notice-row time { font-size:var(--type-meta); }
+  .chat-tool-select { font-size:1rem; }
+  .chat-tool-description { font-size:var(--type-small); }
+  .equip-slot .equip-card-content > strong,.equip-slot-empty { font-size:.6875rem; }
+}
+/* Allow long character and equipment content to shrink within mobile grids. */
+.assistant-layout > *, .chat-panel, .chat-log, .message, .character-dashboard, .dash-tab-content { min-width:0; }
+@media (max-width:800px) { .assistant-layout { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:480px) { .topbar { flex-wrap:wrap; } }
