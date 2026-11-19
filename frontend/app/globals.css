@@ -286,3 +286,19 @@ body { background: radial-gradient(ellipse at 90% 0%, #f8e5cf 0, transparent 34r
 @media (max-width:800px) { .partners-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:520px) { .partners-header { flex-direction:column; }.partners-tools { align-items:stretch; flex-direction:column; }.partners-grid { grid-template-columns:1fr; }.partner-card { padding:18px; } }
 @media (prefers-reduced-motion:reduce) { .partner-card { transition:none; }.partner-card:hover { transform:none; } }
+
+
+/* Keep the selected question tool close to the conversation. */
+.chat-toolbar { position:sticky; top:0; z-index:3; margin:-24px -28px 0; padding:24px 28px 14px; border-bottom:1px solid var(--hairline); border-radius:17px 17px 0 0; background:#fffdf9; }
+.chat-tool-picker { width:min(100%, 450px); margin:14px auto 0; }
+.chat-tool-row { display:flex; align-items:center; justify-content:center; gap:12px; }
+.chat-tool-row > label { flex:none; }
+.chat-tool-select-wrap { position:relative; width:min(100%, 290px); }
+.chat-tool-select { appearance:none; width:100%; min-height:39px; padding:9px 34px 9px 12px; border:1px solid var(--hairline-strong); border-radius:9px; background:#fffaf4; color:var(--white); font:13px/1.4 var(--display); cursor:pointer; transition:border-color .16s ease, box-shadow .16s ease, background .16s ease; }
+.chat-tool-select:hover { border-color:#bb8968; background:#fff7ed; }
+.chat-tool-select:focus-visible { outline:2px solid #d6ae8b; outline-offset:2px; border-color:#ad653a; }
+.chat-tool-chevron { position:absolute; right:12px; top:50%; transform:translateY(-56%); color:#a56743; pointer-events:none; font:18px/1 var(--display); }
+.chat-tool-description { margin:8px 0 0; color:var(--muted); text-align:center; font:12px/1.5 var(--display); }
+@media (max-width:800px) { .chat-toolbar { margin:-20px -20px 0; padding:20px 20px 14px; } }
+@media (max-width:480px) { .chat-tool-row { gap:8px; }.chat-tool-select-wrap { flex:1; min-width:0; }.chat-tool-select { font-size:12px; }.chat-tool-description { font-size:11px; } }
+@media (prefers-reduced-motion:reduce) { .chat-tool-select { transition:none; } }

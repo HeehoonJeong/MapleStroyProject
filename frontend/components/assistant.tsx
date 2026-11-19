@@ -376,15 +376,6 @@ export default function Assistant() {
             ))}
           </div>
 
-          <label className="eyebrow" htmlFor="feature-select">질문 도구</label>
-          <select id="feature-select" className="tool-select" value={featureId} onChange={(event) => setFeatureId(event.target.value as FeatureId | "auto")}>
-            <option value="auto">자동으로 선택</option>
-            {features.map((feature) => <option value={feature.id} key={feature.id}>{feature.number} / {feature.title}</option>)}
-          </select>
-          <div className="tool-summary">
-            <div className="eyebrow">{currentFeature ? `${currentFeature.number} / ${currentFeature.title}` : "RAG · 자동 검색"}</div>
-            <p>{currentFeature?.description ?? "질문과 관련된 공지·공략 문서를 의미 검색하고, 필요한 경우 캐릭터 데이터를 조회합니다."}</p>
-          </div>
           <div className="eyebrow">질문 예시</div>
           <div className="quick-prompts">
             {(currentFeature ? [currentFeature.example] : ["마일리지 개편과 소멸 일정을 알려줘", "캐릭터 장비를 보고 스펙업할 점을 알려줘"]).map((example) => (
@@ -402,7 +393,22 @@ export default function Assistant() {
         {view === "hunting" && ready && <Hunting />}
         {view === "partners" && ready && <Partners />}
         <section hidden={view !== "chat"} className="chat-panel" aria-label="메이플스토리 AI 채팅">
-          <div className="status-text" aria-live="polite">{status}</div>
+          <div className="chat-toolbar">
+            <div className="status-text" aria-live="polite">{status}</div>
+            <div className="chat-tool-picker">
+              <div className="chat-tool-row">
+                <label className="eyebrow" htmlFor="feature-select">질문 도구</label>
+                <div className="chat-tool-select-wrap">
+                  <select id="feature-select" className="chat-tool-select" value={featureId} onChange={(event) => setFeatureId(event.target.value as FeatureId | "auto")} aria-describedby="feature-description">
+                    <option value="auto">자동으로 선택</option>
+                    {features.map((feature) => <option value={feature.id} key={feature.id}>{feature.number} / {feature.title}</option>)}
+                  </select>
+                  <span aria-hidden="true" className="chat-tool-chevron">⌄</span>
+                </div>
+              </div>
+              <p id="feature-description" className="chat-tool-description">{currentFeature?.summary ?? "질문에 맞춰 공지, 공략, 캐릭터 조회 도구를 선택합니다."}</p>
+            </div>
+          </div>
           <div className="chat-log" ref={logRef}>
             {messages.length === 0 && <div className="chat-empty"><span className="eyebrow">A BETTER WAY TO PLAY</span><h2>메이플의 다음 모험을<br />함께 준비해요.</h2><p>공지, 이벤트, 육성, 캐릭터에 관해 질문해 보세요.</p></div>}
             {messages.map((message, index) => (
